@@ -2,6 +2,7 @@
 -author("Kirill Sysoev <kirill.sysoev@gmail.com>").
 
 -export([maybe_pgsql_app/0
+        ,get_informer_id/2
         ]).
 
 -include_lib("zzhd.hrl").
@@ -21,4 +22,18 @@ maybe_pgsql_app() ->
         'false' ->
             []
     end.
+
+-spec get_informer_id(kz_term:ne_binary(), integer()) -> integer().
+get_informer_id(AccountId, _LB_Id) ->
+    case pgapp:equery('zzhd_pgsql_pool', "SELECT id FROM public.identities where kz_account_id = $1", [AccountId]) of
+        {ok,_,[]} ->
+            pgapp:equery(?ZZHD_PGSQL_POOL, "INSERT INTO identities (kz_account_id) VALUES($1)", [AccountId]),
+            case pgapp:equery('zzhd_pgsql_pool', "SELECT id FROM public.identities where kz_account_id = $1", [AccountId]) of
+                {ok,_,[{InformerId}]} -> InformerId;
+                _ -> <<"error inserting new InformerId">>
+            end;
+        {ok,_,[{InformerId}]} -> InformerId
+    end.
+        
+%    Res = pgapp:equery(?ZZHD_PGSQL_POOL, "INSERT INTO public.comments (comment,  kz_account_id) VALUES($1, $2)", [Comment, ConsumerAccountId]),
 

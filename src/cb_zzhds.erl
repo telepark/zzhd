@@ -155,7 +155,7 @@ validate_hd_comments(Context, ?HTTP_POST) ->
     ConsumerAccountId = kz_json:get_value(<<"consumer_accountId">>, ReqData),
     lager:info("validate_hd_comments/2  Comment: ~p",[Comment]),
     lager:info("validate_hd_comments/2  ConsumerAccountId: ~p",[ConsumerAccountId]),
-    Res = pgapp:equery(?ZZHD_PGSQL_POOL, "INSERT INTO public.comments (comment,  accountid) VALUES($1, $2)", [Comment, ConsumerAccountId]),
+    Res = pgapp:equery(?ZZHD_PGSQL_POOL, "INSERT INTO public.comments (comment,  kz_account_id) VALUES($1, $2)", [Comment, ConsumerAccountId]),
     lager:info("validate_hd_comments/2 Res: ~p",[Res]),
     cb_context:set_resp_status(Context, 'success').
 
@@ -235,6 +235,7 @@ account_info_jobj(AccountId) ->
        }
       ,{<<"account_info">>, kz_json:from_list(zzhd_mysql:accounts_table_info(AccountId))}
       ,{<<"kazoo_account_id">>, AccountId}
+      ,{<<"lb_id">>, zzhd_mysql:lbuid_by_uuid(AccountId)}
       ,{<<"account_status">>, AccountStatus}
       ,{<<"account_payments">>, AccountPayments}
       ,{<<"monthly_fees">>, MonthlyFees}
