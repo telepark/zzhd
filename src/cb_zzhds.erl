@@ -13,6 +13,9 @@
 
 -define(ACCOUNT_INFO, <<"account_info">>).
 -define(CID_INFO, <<"cid_info">>).
+-define(HD_INFO, <<"hd_info">>).
+-define(HD_ACCOUNTS, <<"hd_accounts">>).
+-define(HD_COMMENTS, <<"hd_comments">>).
 -define(ACCOUNT_DOCS, <<"account_docs">>).
 -define(ACCOUNT_CDR, <<"account_cdr">>).
 
@@ -35,6 +38,12 @@ allowed_methods(?ACCOUNT_INFO) ->
     [?HTTP_GET];
 allowed_methods(?CID_INFO) ->
     [?HTTP_GET];
+allowed_methods(?HD_ACCOUNTS) ->
+    [?HTTP_GET];
+allowed_methods(?HD_INFO) ->
+    [?HTTP_GET];
+allowed_methods(?HD_COMMENTS) ->
+    [?HTTP_POST, ?HTTP_GET];
 allowed_methods(?ACCOUNT_DOCS) ->
     [?HTTP_POST, ?HTTP_GET];
 allowed_methods(?ACCOUNT_CDR) ->
@@ -71,7 +80,7 @@ validate(Context) ->
 
 -spec validate(cb_context:context(),path_token()) -> cb_context:context().
 validate(Context, ?ACCOUNT_INFO) ->
-    case zzhd_sql:lbuid_by_uuid(cb_context:account_id(Context)) of
+    case zzhd_mysql:lbuid_by_uuid(cb_context:account_id(Context)) of
         'undefined' ->
             cb_context:setters(Context, [{fun cb_context:set_resp_status/2, 'success'}
                                 %        ,{fun cb_context:set_resp_data/2, kz_json:new()}
@@ -79,33 +88,76 @@ validate(Context, ?ACCOUNT_INFO) ->
         _ ->
             validate_account_info(Context, cb_context:req_verb(Context))
     end;
+validate(Context, ?HD_ACCOUNTS) ->
+    Md5Hash = cb_context:req_value(Context, <<"md5">>),
+    case zz_util:get_children_list(<<"d2047d303c22e5399c796a93848dcd9f">>) of
+        {'ok', List} ->
+            cb_context:setters(Context, [{fun cb_context:set_resp_data/2, [kz_json:get_value(<<"value">>,JObj)|| JObj <- List]}
+                                        ,{fun cb_context:set_resp_status/2, 'success'}
+                                        ]);
+        {_, _R}=Error ->
+            cb_context:setters(Context, [{fun cb_context:set_resp_status/2, 'success'}
+                                        ,{fun cb_context:set_resp_data/2, []}
+                                        ])
+    end;
 validate(Context, ?CID_INFO) ->
-    lager:info("validate/2  req_data: ~p",[cb_context:req_data(Context)]),
-    lager:info("validate/2  req_files: ~p",[cb_context:req_files(Context)]),
-    lager:info("validate/2  req_headers: ~p",[cb_context:req_headers(Context)]),
-    lager:info("validate/2  req_nouns: ~p",[cb_context:req_nouns(Context)]),
-    lager:info("validate/2  req_verb: ~p",[cb_context:req_verb(Context)]),
-    lager:info("validate/2  req_id: ~p",[cb_context:req_id(Context)]),
-    lager:info("validate/2  req_value: ~p",[cb_context:req_value(Context, <<"phone_number">>)]),
     Number = cb_context:req_value(Context, <<"phone_number">>),
     Num = kz_term:to_binary([Ch || Ch <- kz_term:to_list(Number), Ch >= $0 andalso Ch < $9]),
     case knm_number:lookup_account(Num) of
         {'ok', AccountId, _ExtraOptions} ->
-%            JObj = kz_json:from_list(
-%                     [{<<"account_id">>, AccountId}
-%                     ,{<<"number">>, knm_number_options:number(ExtraOptions)}
-%                     ]),
-%            crossbar_util:response(JObj, Context);
             return_account_info(Context, AccountId);
         {_, _R}=Error ->
             cb_context:setters(Context, [{fun cb_context:set_resp_status/2, 'success'}
                                         ,{fun cb_context:set_resp_data/2, kz_json:new()}
                                         ])
     end;
+validate(Context, ?HD_INFO) ->
+    lager:info("validate/2  req_data: ~p",[cb_context:req_data(Context)]),
+    lager:info("validate/2  req_files: ~p",[cb_context:req_files(Context)]),
+    lager:info("validate/2  req_headers: ~p",[cb_context:req_headers(Context)]),
+    lager:info("validate/2  req_nouns: ~p",[cb_context:req_nouns(Context)]),
+    lager:info("validate/2  req_verb: ~p",[cb_context:req_verb(Context)]),
+    lager:info("validate/2  req_id: ~p",[cb_context:req_id(Context)]),
+    lager:info("validate/2  req_value: ~p",[cb_context:req_value(Context, <<"consumer_accountId">>)]),
+    case cb_context:req_value(Context, <<"consumer_accountId">>) of
+        ?MATCH_ACCOUNT_RAW(AccountId) ->
+            lager:info("validate/2 HD_INFO Account Matched"),
+            return_account_info(Context, AccountId);
+        _ ->
+            cb_context:setters(Context, [{fun cb_context:set_resp_status/2, 'success'}
+                                        ,{fun cb_context:set_resp_data/2, kz_json:new()}
+                                        ])
+    end;
+validate(Context, ?HD_COMMENTS) ->
+    validate_hd_comments(Context, cb_context:req_verb(Context));
 validate(Context, ?ACCOUNT_DOCS) ->
     validate_account_docs(Context, cb_context:req_verb(Context));
 validate(Context, ?ACCOUNT_CDR) ->
     validate_account_cdr(Context, cb_context:req_verb(Context)).
+
+-spec validate_hd_comments(cb_context:context(), http_method()) -> cb_context:context().
+validate_hd_comments(Context, ?HTTP_GET) ->
+    lager:info("validate_hd_comments validate/2  req_value consumer_accountId: ~p",[cb_context:req_value(Context, <<"consumer_accountId">>)]),
+    lager:info("validate_hd_comments validate/2  req_value lb_id: ~p",[cb_context:req_value(Context, <<"lb_id">>)]),
+    lager:info("validate_hd_comments validate/2  req_value phone_number: ~p",[cb_context:req_value(Context, <<"phone_number">>)]),
+    QS = cb_context:query_string(Context),
+    lager:info("validate_hd_comments validate/2 query_string: ~p",[QS]),
+    case kz_json:get_first_defined([<<"consumer_accountId">>,<<"lb_id">>,<<"phone_number">>], QS) of
+        'undefined' ->
+            return_hd_comments_all(Context);
+        _ ->
+            return_hd_comments_select(Context)
+    end;
+validate_hd_comments(Context, ?HTTP_POST) ->
+    lager:info("validate_hd_comments/2  req_data: ~p",[cb_context:req_data(Context)]),
+    ReqData = cb_context:req_data(Context),
+    Comment = kz_json:get_value(<<"comment">>, ReqData),
+    ConsumerAccountId = kz_json:get_value(<<"consumer_accountId">>, ReqData),
+    lager:info("validate_hd_comments/2  Comment: ~p",[Comment]),
+    lager:info("validate_hd_comments/2  ConsumerAccountId: ~p",[ConsumerAccountId]),
+    Res = pgapp:equery(?ZZHD_PGSQL_POOL, "INSERT INTO public.comments (comment,  accountid) VALUES($1, $2)", [Comment, ConsumerAccountId]),
+    lager:info("validate_hd_comments/2 Res: ~p",[Res]),
+    cb_context:set_resp_status(Context, 'success').
 
 -spec validate_zzhd(cb_context:context(), http_method()) -> cb_context:context().
 validate_zzhd(Context, ?HTTP_PUT) ->
@@ -136,10 +188,10 @@ validate_account_info(Context, ?HTTP_GET) ->
     AccountId = cb_context:account_id(Context),
     return_account_info(Context, AccountId).
 
-return_account_info(Context, AccountId) ->
-    [StatusID, BlockDate] = zzhd_sql:account_status(AccountId),
+account_info_jobj(AccountId) ->
+    [_StatusID, BlockDate] = zzhd_mysql:account_status(AccountId),
     AccountStatus =
-        case zzhd_sql:account_status(AccountId) of
+        case zzhd_mysql:account_status(AccountId) of
             [0, BlockDate] ->
                 kz_json:from_list([{'status', 'true'},{'block_date', kz_time:iso8601(BlockDate)}]); 
             [_, BlockDate] ->
@@ -152,46 +204,101 @@ return_account_info(Context, AccountId) ->
                             ,{'status', Status}
                             ,{'cancel_date', CancelDate}
                             ])
-            || [Amount, PayDate, Comment, Status, CancelDate] <- zzhd_sql:account_payments(AccountId)],
+            || [Amount, PayDate, Comment, Status, CancelDate] <- zzhd_mysql:account_payments(AccountId)],
     MonthlyFees =
         [ kz_json:from_list([{'fee_name', FeeName}
                             ,{'price', Price}
                             ,{'quantity', Qty}
                             ,{'cost', Cost}
                             ])
-            || [FeeName, Price, Qty, Cost] <- zzhd_sql:monthly_fees(AccountId)],
+            || [FeeName, Price, Qty, Cost] <- zzhd_mysql:monthly_fees(AccountId)],
     PhoneNumbersByTariff =
         [ kz_json:from_list([{'tar_id', TarId}
-                            ,{'tar_descr', zzhd_sql:tariff_descr_by_tar_id(TarId)}
-                            ,{'vg_id_numbers', zzhd_sql:numbers_by_vg_id(VgId)}
+                            ,{'tar_descr', zzhd_mysql:tariff_descr_by_tar_id(TarId)}
+                            ,{'vg_id_numbers', zzhd_mysql:numbers_by_vg_id(VgId)}
                             ])
-            || [VgId, TarId] <- zzhd_sql:accounts_tariffs_by_type(1, AccountId)],
+            || [VgId, TarId] <- zzhd_mysql:accounts_tariffs_by_type(1, AccountId)],
     IPAddressesByTariff =
         [ kz_json:from_list([{'tar_id', TarId}
-                            ,{'tar_descr', zzhd_sql:tariff_descr_by_tar_id(TarId)}
-                            ,{'vg_id_ip_addresses', zzhd_sql:ip_addresses_by_vg_id(VgId)}
+                            ,{'tar_descr', zzhd_mysql:tariff_descr_by_tar_id(TarId)}
+                            ,{'vg_id_ip_addresses', zzhd_mysql:ip_addresses_by_vg_id(VgId)}
                             ])
-            || [VgId, TarId] <- zzhd_sql:accounts_tariffs_by_type(2, AccountId)],
+            || [VgId, TarId] <- zzhd_mysql:accounts_tariffs_by_type(2, AccountId)],
     [[_CompanyName, AgrmNum, {AY, AM, AD}]] =
-        zzhd_sql:agreements_creds_by_id(zzhd_sql:main_agrm_id(AccountId)),
-    RespJObj = kz_json:from_list(
-      [{<<"account_balance">>, zzhd_sql:account_balance(AccountId)}
+        zzhd_mysql:agreements_creds_by_id(zzhd_mysql:main_agrm_id(AccountId)),
+    kz_json:from_list(
+      [{<<"account_balance">>, zzhd_mysql:account_balance(AccountId)}
       ,{<<"main_agrm">>
        ,{[{<<"agrm_num">>, AgrmNum}
         ,{<<"agrm_date">>, <<(kz_term:to_binary(AY))/binary,"-", (kz_date:pad_month(AM))/binary,"-", (kz_date:pad_month(AD))/binary>>}
         ]}
        }
-      ,{<<"account_info">>, kz_json:from_list(zzhd_sql:accounts_table_info(AccountId))}
+      ,{<<"account_info">>, kz_json:from_list(zzhd_mysql:accounts_table_info(AccountId))}
       ,{<<"kazoo_account_id">>, AccountId}
       ,{<<"account_status">>, AccountStatus}
       ,{<<"account_payments">>, AccountPayments}
       ,{<<"monthly_fees">>, MonthlyFees}
       ,{<<"phone_numbers_by_tariff">>, PhoneNumbersByTariff}
       ,{<<"ip_addresses_by_tariff">>, IPAddressesByTariff}
-      ]),
-    cb_context:setters(Context, [{fun cb_context:set_resp_data/2, RespJObj}
+      ]).
+
+return_account_info(Context, AccountId) ->
+    JObj = account_info_jobj(AccountId),
+    cb_context:setters(Context, [{fun cb_context:set_resp_data/2, JObj}
                                 ,{fun cb_context:set_resp_status/2, 'success'}
                                 ]).
+
+return_hd_comments_select(Context) ->
+    case pgapp:equery(?ZZHD_PGSQL_POOL, "SELECT * FROM public.comments", []) of
+        {ok, Columns, Rows} ->
+            Rs = [kz_json:from_list([{<<"comment">>, Comment}
+                                    ,{<<"created">>, maybe_correct_datetime(Created)}
+                                    ,{<<"modified">>, maybe_correct_datetime(Modified)}
+                                    ,{<<"account_id">>, AccountId}
+                                    ,{<<"informer_id">>, InformerId}
+                                   ])
+                    || {Comment, Created, Modified, AccountId, InformerId} <- Rows],
+            lager:info("return_hd_comments_select Columns: ~p",[Columns]),
+            lager:info("return_hd_comments_select Rows: ~p",[Rows]),
+            cb_context:setters(Context, [{fun cb_context:set_resp_status/2, 'success'}
+                               %%         ,{fun cb_context:set_resp_data/2, kz_json:set_value(<<"rows">>, Rs, kz_json:new())}
+                                        ,{fun cb_context:set_resp_data/2, Rs}
+                                        ]);
+        {error, Error} -> 
+            lager:info("return_hd_comments_select Error: ", [Error]),
+            cb_context:setters(Context, [{fun cb_context:set_resp_status/2, 'error'}
+                                        ,{fun cb_context:set_resp_data/2, Error}
+                                        ])
+    end.
+
+return_hd_comments_all(Context) ->
+    case pgapp:equery(?ZZHD_PGSQL_POOL, "SELECT * FROM public.comments", []) of
+        {ok, Columns, Rows} ->
+            Rs = [kz_json:from_list([{<<"comment">>, Comment}
+                                    ,{<<"created">>, maybe_correct_datetime(Created)}
+                                    ,{<<"modified">>, maybe_correct_datetime(Modified)}
+                                    ,{<<"account_id">>, AccountId}
+                                    ,{<<"informer_id">>, InformerId}
+                                   ])
+                    || {Comment, Created, Modified, AccountId, InformerId} <- Rows],
+            cb_context:setters(Context, [{fun cb_context:set_resp_status/2, 'success'}
+                                        ,{fun cb_context:set_resp_data/2, Rs}
+                                        ]);
+        {error, Error} -> 
+            cb_context:setters(Context, [{fun cb_context:set_resp_status/2, 'error'}
+                                        ,{fun cb_context:set_resp_data/2, Error}
+                                        ])
+    end.
+
+%maybe_correct_tuple(T) ->
+%    L1 = tuple_to_list(T),
+%    L2 = [maybe_correct_datetime(Field) || Field <- L1],
+%    list_to_tuple(L2).
+
+maybe_correct_datetime({{_, _, _}=Date, {H, M, S}}) ->
+    kz_time:gregorian_seconds_to_unix_seconds(calendar:datetime_to_gregorian_seconds({Date,{H,M,kz_term:to_integer(S)}}));
+maybe_correct_datetime(Field) ->
+    Field.
 
 -spec validate_account_docs(cb_context:context(), http_method()) -> cb_context:context().
 validate_account_docs(Context, ?HTTP_GET) ->
@@ -224,10 +331,10 @@ validate_account_docs(Context, ?HTTP_POST) ->
                 ,kz_json:get_value(<<"month">>, ReqData)}
         end,
     RespJObj = kz_json:from_list(
-      [{<<"proformas">>, docs_list_to_json(zzhd_sql:get_docs_list(Year, Month, <<"1">>, AccountId))}
-      ,{<<"acts">>, docs_list_to_json(zzhd_sql:get_docs_list(Year, Month, <<"2">>, AccountId))}
-      ,{<<"vat_invoices">>, docs_list_to_json(zzhd_sql:get_docs_list(Year, Month, <<"3">>, AccountId))}
-      ,{<<"calls_reports_pdf">>, docs_list_to_json(zzhd_sql:get_docs_list(Year, Month, <<"43">>, AccountId))}
+      [{<<"proformas">>, docs_list_to_json(zzhd_mysql:get_docs_list(Year, Month, <<"1">>, AccountId))}
+      ,{<<"acts">>, docs_list_to_json(zzhd_mysql:get_docs_list(Year, Month, <<"2">>, AccountId))}
+      ,{<<"vat_invoices">>, docs_list_to_json(zzhd_mysql:get_docs_list(Year, Month, <<"3">>, AccountId))}
+      ,{<<"calls_reports_pdf">>, docs_list_to_json(zzhd_mysql:get_docs_list(Year, Month, <<"43">>, AccountId))}
       ,{<<"account_id">>, AccountId}
       ]),
     cb_context:setters(Context, [{fun cb_context:set_resp_data/2, RespJObj}
@@ -267,7 +374,7 @@ validate_account_cdr(Context, ?HTTP_POST) ->
         CallsType = kz_json:get_value(<<"calls_type">>, ReqData, <<"1,2,3,4">>),
         MaxCalls = kz_json:get_value(<<"max_calls">>, ReqData, <<"5000">>),
     RespJObj = kz_json:from_list(
-      [{<<"cdrs">>, cdr_to_json(zzhd_sql:get_calls_list_by_day(Date, Direction, CallsType, MaxCalls, AccountId))}
+      [{<<"cdrs">>, cdr_to_json(zzhd_mysql:get_calls_list_by_day(Date, Direction, CallsType, MaxCalls, AccountId))}
       ]),
     cb_context:setters(Context, [{fun cb_context:set_resp_data/2, RespJObj}
                                 ,{fun cb_context:set_resp_status/2, 'success'}

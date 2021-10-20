@@ -1,4 +1,4 @@
--module(zzhd_sql).
+-module(zzhd_mysql).
 -author("Kirill Sysoev <kirill.sysoev@gmail.com>").
 
 -export([q_raw/2
@@ -37,8 +37,6 @@
 
 -include_lib("zzhd.hrl").
 
--define(LB_MYSQL_POOL, 'lb_mysql').
-
 -spec maybe_mysql_child() -> kz_term:proplists().
 maybe_mysql_child() ->
     case kapps_config:get_is_true(<<"zzhd">>, <<"mysql_pool_enable">>, 'false') of
@@ -49,22 +47,22 @@ maybe_mysql_child() ->
                            ,{password, kapps_config:get_string(<<"zzhd">>, <<"mysql_password">>, <<"password">>)}
                            ,{database, kapps_config:get_string(<<"zzhd">>, <<"mysql_database">>, <<"database">>)}
                            ],
-            [mysql_poolboy:child_spec(?LB_MYSQL_POOL, PoolOptions, MySqlOptions)];
+            [mysql_poolboy:child_spec(?ZZHD_MYSQL_POOL, PoolOptions, MySqlOptions)];
         'false' ->
             []
     end.
 
 -spec q_raw(kz_term:ne_binary(),kz_term:proplists()) -> any().
 q_raw(Query, Parameters) ->
-    mysql_poolboy:query(?LB_MYSQL_POOL, Query, Parameters).
+    mysql_poolboy:query(?ZZHD_MYSQL_POOL, Query, Parameters).
 
 q(Query, Parameters) ->
-    {_,_,Result} = mysql_poolboy:query(?LB_MYSQL_POOL, Query, Parameters),
+    {_,_,Result} = mysql_poolboy:query(?ZZHD_MYSQL_POOL, Query, Parameters),
     Result.
 
 -spec lbuid_by_uuid(kz_term:ne_binary()) -> any().
 lbuid_by_uuid(AccountId) ->
-    case mysql_poolboy:query(?LB_MYSQL_POOL
+    case mysql_poolboy:query(?ZZHD_MYSQL_POOL
                             ,<<"select uid from accounts where uuid = ? limit 1">>
                             ,[AccountId])
     of
@@ -77,7 +75,7 @@ account_balance(AccountId) ->
     case lbuid_by_uuid(AccountId) of
         'undefined' -> 'undefined';
         UID ->
-            case mysql_poolboy:query(?LB_MYSQL_POOL
+            case mysql_poolboy:query(?ZZHD_MYSQL_POOL
                                     ,<<"SELECT COALESCE(sum(balance),0) FROM agreements  where uid = ? and agreements.archive = 0">>
                                     ,[UID])
             of
@@ -91,7 +89,7 @@ main_agrm_id(AccountId) ->
     case lbuid_by_uuid(AccountId) of
         'undefined' -> 'undefined';
         UID ->
-            case mysql_poolboy:query(?LB_MYSQL_POOL
+            case mysql_poolboy:query(?ZZHD_MYSQL_POOL
                                     ,<<"SELECT agrm_id from agreements where uid  = ? and oper_id = 1 limit 1">>
                                     ,[UID])
             of
@@ -107,7 +105,7 @@ accounts_table_info(AccountId) ->
     case lbuid_by_uuid(AccountId) of
         'undefined' -> [];
         UID ->
-            case mysql_poolboy:query(?LB_MYSQL_POOL
+            case mysql_poolboy:query(?ZZHD_MYSQL_POOL
                                     ,<<"select name,inn,kpp,kont_person,phone,fax,gen_dir_u,gl_buhg_u,email from accounts where uid = ? limit 1">>
                                     ,[UID])
             of
@@ -179,7 +177,7 @@ get_accounts_emails(AccountId) ->
     case lbuid_by_uuid(AccountId) of
         'undefined' -> [];
         UID ->
-            case mysql_poolboy:query(?LB_MYSQL_POOL
+            case mysql_poolboy:query(?ZZHD_MYSQL_POOL
                                     ,<<"select email from accounts where uid = ? limit 1">>
                                     ,[UID])
             of
@@ -193,7 +191,7 @@ curr_month_credit(AccountId) ->
     case main_agrm_id(AccountId) of
         'undefined' -> 'undefined';
         AgrmId ->
-            case mysql_poolboy:query(?LB_MYSQL_POOL
+            case mysql_poolboy:query(?ZZHD_MYSQL_POOL
                                     ,<<"SELECT SUM(amount) FROM payments where pay_date >= DATE_FORMAT(NOW() ,'%Y-%m-01') and agrm_id = ?">>
                                     ,[AgrmId]
                                     )
@@ -215,7 +213,7 @@ bom_balance(AccountId) ->
             ,"and balances.date = DATE_FORMAT(NOW() ,'%Y-%m-01') "
             ,"and accounts.uuid = ?"
            >>,
-    case mysql_poolboy:query(?LB_MYSQL_POOL, QStr, [AccountId]) of
+    case mysql_poolboy:query(?ZZHD_MYSQL_POOL, QStr, [AccountId]) of
         {ok,_,[[Uid]]} -> Uid;
         _ -> 'undefined'
     end.
@@ -229,10 +227,10 @@ calc_curr_month_exp(AccountId) ->
             Today = io_lib:format("~w~2..0w~2..0w",[Year, Month, Day]),
             QueryString = io_lib:format("Select COALESCE(ifnull((SELECT sum(amount) FROM  tel001~s where uid = ~p),0) + ifnull((SELECT sum(amount) FROM  day where Month(timefrom) = Month(Now()) and Year(timefrom) = Year(Now()) and uid = ~p),0) + (Select sum(amount) from charges where agrm_id = (SELECT agrm_id FROM agreements where uid = ~p and oper_id = 1 and archive = 0) and Month(period) = Month(Now()) and Year(period) = Year(Now())),0)",[Today,UID,UID,UID]),
             QueryCheckTableString = io_lib:format("show tables like 'tel001~s'", [Today]),
-            case mysql_poolboy:query(?LB_MYSQL_POOL, QueryCheckTableString) of
+            case mysql_poolboy:query(?ZZHD_MYSQL_POOL, QueryCheckTableString) of
                 {ok,_,[]} -> 'undefined';
                 _  ->
-                    case mysql_poolboy:query(?LB_MYSQL_POOL, QueryString) of
+                    case mysql_poolboy:query(?ZZHD_MYSQL_POOL, QueryString) of
                         {ok,_,[[Amount]]} -> Amount;
                         _ -> 'undefined'
                     end
@@ -245,7 +243,7 @@ calc_prev_month_exp(AccountId) ->
         'undefined' -> 'undefined';
         UID ->
             QueryString = io_lib:format("Select COALESCE(ifnull((SELECT sum(amount) FROM  day where Month(timefrom) = Month(DATE_ADD(Now(), INTERVAL -1 MONTH)) and Year(timefrom) = Year(DATE_ADD(Now(), INTERVAL -1 MONTH)) and uid = ~p),0) + (Select sum(amount) from charges where agrm_id = (SELECT agrm_id FROM agreements where uid = ~p and oper_id = 1 and archive = 0) and Month(period) = Month(DATE_ADD(Now(), INTERVAL -1 MONTH)) and Year(period) = Year(DATE_ADD(Now(), INTERVAL -1 MONTH))),0)",[UID,UID]),
-            case mysql_poolboy:query(?LB_MYSQL_POOL, QueryString) of
+            case mysql_poolboy:query(?ZZHD_MYSQL_POOL, QueryString) of
                 {ok,_,[[Amount]]} -> Amount;
                 _ -> 'undefined'
             end
@@ -257,7 +255,7 @@ is_prepaid(AccountId) ->
         'undefined' -> 'true';
         UID ->
             QueryString = <<"SELECT 1 FROM tarifs, vgroups where tarifs.tar_id = vgroups.tar_id and vgroups.uid = ?  and tarifs.act_block = 2 limit 1">>,
-            case mysql_poolboy:query(?LB_MYSQL_POOL, QueryString, [UID]) of
+            case mysql_poolboy:query(?ZZHD_MYSQL_POOL, QueryString, [UID]) of
                 {ok,_,[]} -> 'false';
                 _ -> 'true'
             end
@@ -282,7 +280,7 @@ agreements_data(AccountId) ->
         'undefined' -> 'undefined';
         UID ->
             QueryString = <<"select oper_id,number,date from agreements where uid = ?">>,
-            case mysql_poolboy:query(?LB_MYSQL_POOL, QueryString, [UID]) of
+            case mysql_poolboy:query(?ZZHD_MYSQL_POOL, QueryString, [UID]) of
                 {ok,_,Res} -> Res;
                 _ -> []
             end
@@ -294,7 +292,7 @@ addresses_data(AccountId) ->
         'undefined' -> 'undefined';
         UID ->
             QueryString = <<"select type,address from accounts_addr where uid = ?">>,
-            case mysql_poolboy:query(?LB_MYSQL_POOL, QueryString, [UID]) of
+            case mysql_poolboy:query(?ZZHD_MYSQL_POOL, QueryString, [UID]) of
                 {ok,_,Res} -> Res;
                 _ -> []
             end
@@ -306,7 +304,7 @@ get_field(K, Table, AccountId) ->
         'undefined' -> 'undefined';
         UID ->
             QueryString = kz_binary:join([<<"select">>, K, <<"from">>, Table, <<"where uid =">>, UID], <<" ">>),
-            case mysql_poolboy:query(?LB_MYSQL_POOL, QueryString) of
+            case mysql_poolboy:query(?ZZHD_MYSQL_POOL, QueryString) of
                 {ok,_,[[Res]]} -> Res;
                 _ -> 'undefined'
             end
@@ -318,7 +316,7 @@ get_field(Field, {K1, V1}, Table, AccountId) ->
         'undefined' -> 'undefined';
         UID ->
             QueryString = kz_binary:join([<<"select">>, Field, <<"from">>, Table, <<"where">>, K1, <<"=">>, V1, <<"and uid =">>, UID], <<" ">>),
-            case mysql_poolboy:query(?LB_MYSQL_POOL, QueryString) of
+            case mysql_poolboy:query(?ZZHD_MYSQL_POOL, QueryString) of
                 {ok,_,[[Res]]} -> Res;
                 _ -> 'undefined'
             end
@@ -330,13 +328,13 @@ update_field(K, V, Table, AccountId) ->
         'undefined' -> 'undefined';
         UID ->
             QueryString = kz_binary:join([<<"update">>, Table, <<"set">>, K, <<"= ?">>, <<"where uid =">>, UID], <<" ">>),
-            mysql_poolboy:query(?LB_MYSQL_POOL, QueryString, [V])
+            mysql_poolboy:query(?ZZHD_MYSQL_POOL, QueryString, [V])
     end.
 
 -spec get_periodic_fees(kz_term:ne_binary()) -> kz_term:proplists().
 get_periodic_fees(AccountId) ->
     QueryString = <<"select tar_id,serv_cat_idx,mul,timefrom,timeto from `services` where vg_id in (select vg_id from vgroups,accounts where vgroups.uid = accounts.uid and accounts.uuid = ?)">>,
-    case mysql_poolboy:query(?LB_MYSQL_POOL, QueryString, [AccountId]) of
+    case mysql_poolboy:query(?ZZHD_MYSQL_POOL, QueryString, [AccountId]) of
         {ok,_,Res} when is_list(Res) ->
             [[service_cat_uuid(TarId, ServCatIDX), kz_term:to_integer(Qty), From, To] || [TarId, ServCatIDX, Qty, From, To] <- Res
             ,is_binary(service_cat_uuid(TarId, ServCatIDX))
@@ -347,7 +345,7 @@ get_periodic_fees(AccountId) ->
 -spec service_cat_uuid(integer(), integer()) -> kz_term:ne_binary().
 service_cat_uuid(TarId, ServCatIDX) ->
     QueryString = <<"select uuid from service_categories where uuid != '' and tar_id = ? and serv_cat_idx = ? limit 1">>,
-    case mysql_poolboy:query(?LB_MYSQL_POOL, QueryString, [TarId, ServCatIDX]) of
+    case mysql_poolboy:query(?ZZHD_MYSQL_POOL, QueryString, [TarId, ServCatIDX]) of
         {ok,_,[[Res]]} -> Res;
         _ -> [] 
     end.
@@ -355,7 +353,7 @@ service_cat_uuid(TarId, ServCatIDX) ->
 -spec accounts_groups(kz_term:ne_binary()) -> kz_term:proplists().
 accounts_groups(AccountId) ->
     QueryString = <<"select usergroups_staff.group_id from usergroups_staff, usergroups where usergroups.group_id = usergroups_staff.group_id and uid = (Select uid from accounts where uuid = ?)">>,
-    case mysql_poolboy:query(?LB_MYSQL_POOL, QueryString, [AccountId]) of
+    case mysql_poolboy:query(?ZZHD_MYSQL_POOL, QueryString, [AccountId]) of
         {ok,_,Res} when is_list(Res) -> Res;
         _ -> [] 
     end.
@@ -419,7 +417,7 @@ get_docs_list(Year, Month, DocsIds, AccountId) ->
         UID ->
             QueryString = io_lib:format("SELECT accounts.name, orders.order_id, orders.order_num, orders.period, orders.order_date, if(orders.period >= '2015-12-01',round(orders.curr_summ/1.18,2),round(orders.curr_summ,2)), round(orders.tax_summ,2), if(orders.period >= '2015-12-01',round(orders.curr_summ,2),round(orders.curr_summ,2) + round(orders.tax_summ,2))  FROM orders, accounts where accounts.uid=orders.oper_id and Year(period) = ~s and Month(period) = ~s and agrm_id in (Select agrm_id from agreements where uid = ~s) and doc_id in (~s)", [kz_term:to_binary(Year), kz_term:to_binary(Month), kz_term:to_binary(UID), DocsIds]),
 
-            case mysql_poolboy:query(?LB_MYSQL_POOL, QueryString)
+            case mysql_poolboy:query(?ZZHD_MYSQL_POOL, QueryString)
             of
                 {ok,_,QueryResult} -> QueryResult;
                 _ -> [] 

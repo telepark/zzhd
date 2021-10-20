@@ -234,11 +234,11 @@ compare_balances(_, [SubAccountId | DescendantsIds]) ->
            {'error', _} -> 'error';
            BomBalance -> BomBalance
        end,
-    BOM_LbBalance = zzhd_sql:bom_balance(SubAccountId),
+    BOM_LbBalance = zzhd_mysql:bom_balance(SubAccountId),
     BOM_Difference =
         try kz_term:to_float(BOM_KazooBalance) - kz_term:to_float(BOM_LbBalance) catch _:_ -> 'math_error' end,
     CurrentKazooBalance = zz_util:current_account_dollars(SubAccountId),
-    CurrentLbBalance = zzhd_sql:account_balance(SubAccountId),
+    CurrentLbBalance = zzhd_mysql:account_balance(SubAccountId),
     CurrentDifference =
         try kz_term:to_float(CurrentKazooBalance) - kz_term:to_float(CurrentLbBalance) catch _:_ -> 'math_error' end,
     {[SubAccountId
@@ -263,7 +263,7 @@ compare_credits(_, [SubAccountId | DescendantsIds]) ->
                                                                        )
                                                    )
                                  ),
-    LbCredit = zzhd_sql:curr_month_credit(SubAccountId),
+    LbCredit = zzhd_mysql:curr_month_credit(SubAccountId),
     Difference =
         try kz_term:to_float(KazooCredit) - kz_term:to_float(LbCredit) catch _:_ -> 'math_error' end,
     {[SubAccountId
@@ -293,7 +293,7 @@ compare_usage(_, [SubAccountId | DescendantsIds]) ->
                                                                        )
                                                    )
                                  ),
-    PrevMonthLbUsage = zzhd_sql:calc_prev_month_exp(SubAccountId),
+    PrevMonthLbUsage = zzhd_mysql:calc_prev_month_exp(SubAccountId),
     PrevMonthDifference =
         try
           kz_term:to_float(PrevMonthKazooUsage) + kz_term:to_float(PrevMonthKazooLedgers) - kz_term:to_float(PrevMonthLbUsage)
@@ -312,7 +312,7 @@ compare_usage(_, [SubAccountId | DescendantsIds]) ->
                                                                        )
                                                    )
                                  ),
-    LbUsage = zzhd_sql:calc_curr_month_exp(SubAccountId),
+    LbUsage = zzhd_mysql:calc_curr_month_exp(SubAccountId),
     Difference =
         try
           kz_term:to_float(KazooUsage) + kz_term:to_float(KazooLedgers) - kz_term:to_float(LbUsage)
@@ -339,10 +339,10 @@ sync_bom_balance(_, [SubAccountId | DescendantsIds]) ->
     Balance =
         case AccountType of
             <<"POS">> ->
-                LB_BOM_Balance = zzhd_sql:calc_prev_month_exp(SubAccountId),
+                LB_BOM_Balance = zzhd_mysql:calc_prev_month_exp(SubAccountId),
                 try -1 * kz_term:to_integer(wht_util:dollars_to_units(LB_BOM_Balance)) catch _:_ -> LB_BOM_Balance end;
             <<"PRE">> ->
-                LB_BOM_Balance = zzhd_sql:bom_balance(SubAccountId),
+                LB_BOM_Balance = zzhd_mysql:bom_balance(SubAccountId),
                 try kz_term:to_integer(wht_util:dollars_to_units(LB_BOM_Balance)) catch _:_ -> LB_BOM_Balance end
         end,
     Result = set_bom_balance(Balance, SubAccountId),
@@ -358,7 +358,7 @@ sync_customer_data(#{account_id := AccountId}, init) ->
 sync_customer_data(_, []) -> stop;
 sync_customer_data(_, [SubAccountId | DescendantsIds]) ->
     {'ok', JObj} = kz_account:fetch(SubAccountId),
-    case zzhd_sql:lbuid_by_uuid(SubAccountId) of
+    case zzhd_mysql:lbuid_by_uuid(SubAccountId) of
         'undefined' ->
             {[SubAccountId ,kz_account:name(JObj) , 'no_such_account_in_lb'], DescendantsIds};
         _ -> 
@@ -407,7 +407,7 @@ migrate_onbill_doc(#{account_id := AccountId}, init) ->
 migrate_onbill_doc(_, []) -> stop;
 migrate_onbill_doc(_, [SubAccountId | DescendantsIds]) ->
     {'ok', JObj} = kz_account:fetch(SubAccountId),
-    case zzhd_sql:lbuid_by_uuid(SubAccountId) of
+    case zzhd_mysql:lbuid_by_uuid(SubAccountId) of
         'undefined' ->
             {[SubAccountId ,kz_account:name(JObj) , 'no_such_account_in_lb'], DescendantsIds};
         _ -> 
@@ -536,7 +536,7 @@ set_bom_balance(_Amount, _AccountId) ->
     'not_integer'.
 
 account_type(AccountId) ->
-    case zzhd_sql:is_prepaid(AccountId) of
+    case zzhd_mysql:is_prepaid(AccountId) of
         'true' -> <<"PRE">>;
         'false' -> <<"POS">>
     end.

@@ -49,7 +49,8 @@ start_link() ->
 -spec init(any()) -> kz_types:sup_init_ret().
 init([]) ->
     kt_zzhd:init(),
-    Children = ?CHILDREN ++ zzhd_sql:maybe_mysql_child(),
+    _ = zzhd_mysql:maybe_pgsql_app(),
+    Children = ?CHILDREN ++ zzhd_mysql:maybe_mysql_child(),
     RestartStrategy = 'one_for_one',
     MaxRestarts = 5,
     MaxSecondsBetweenRestarts = 10,

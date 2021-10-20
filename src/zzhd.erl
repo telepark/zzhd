@@ -16,7 +16,7 @@ add_payment(AccountId, JObj) ->
     {'ok', Doc} = kz_datamgr:open_doc(EncodedDb, DocId),
     case kz_json:get_binary_value(<<"pvt_reason">>, Doc) of
         <<"wire_transfer">> ->
-            AgrmId = zzhd_sql:main_agrm_id(AccountId),
+            AgrmId = zzhd_mysql:main_agrm_id(AccountId),
             Summ = wht_util:units_to_dollars(kz_json:get_integer_value(<<"pvt_amount">>, Doc, 0)),
             Receipt = kz_json:get_binary_value(<<"_id">>, Doc, <<>>),
             Comment = kz_json:get_binary_value(<<"description">>, Doc, <<>>),
@@ -27,7 +27,7 @@ add_payment(AccountId, JObj) ->
 
 -spec kazoo_to_lb_sync(kz_term:ne_binary()) -> any().
 kazoo_to_lb_sync(AccountId) ->
-    case zzhd_sql:lbuid_by_uuid(AccountId) of
+    case zzhd_mysql:lbuid_by_uuid(AccountId) of
         'undefined' ->
             create_lb_account(AccountId),
             timer:sleep(1000),
@@ -143,7 +143,7 @@ lb_to_kazoo_sync_account_field(LbK, AccountId) ->
     lb_to_kazoo_sync_account_field(LbK, LbK, AccountId).
 
 lb_to_kazoo_sync_account_field(LbK, KzK, AccountId) ->
-    case zzhd_sql:get_field(LbK, <<"accounts">>, AccountId) of
+    case zzhd_mysql:get_field(LbK, <<"accounts">>, AccountId) of
       'undefined' -> 'ok';
       <<>> -> 'ok';
       [] -> 'ok';
@@ -154,14 +154,14 @@ lb_to_kazoo_sync_account_field(LbK, KzK, AccountId) ->
 
 lb_to_kazoo_sync_account_type(AccountId) ->
     Type =
-        case zzhd_sql:get_field(<<"type">>, <<"accounts">>, AccountId) of
+        case zzhd_mysql:get_field(<<"type">>, <<"accounts">>, AccountId) of
             2 -> <<"personal">>;
             _ -> <<"corporate">>
         end,
     update_onbill_doc([{<<"customer_type">>, Type}], AccountId).
 
 lb_to_kazoo_sync_account_passport(AccountId) ->
-    case zzhd_sql:get_field(<<"pass_issuedate">>, <<"accounts">>, AccountId) of
+    case zzhd_mysql:get_field(<<"pass_issuedate">>, <<"accounts">>, AccountId) of
         {0,0,0} ->
             zz_util:process_documents([<<"pass_issuedate">>]
                                          ,[]
@@ -176,7 +176,7 @@ lb_to_kazoo_sync_account_passport(AccountId) ->
     end.
 
 lb_to_kazoo_sync_account_birthdate(AccountId) ->
-    case zzhd_sql:get_field(<<"birthdate">>, <<"accounts">>, AccountId) of
+    case zzhd_mysql:get_field(<<"birthdate">>, <<"accounts">>, AccountId) of
         {0,0,0} ->
             zz_util:process_documents([<<"birthdate">>]
                                          ,[]
@@ -191,7 +191,7 @@ lb_to_kazoo_sync_account_birthdate(AccountId) ->
     end.
 
 sync_addresses(AccountId) ->
-    AddressesList = zzhd_sql:addresses_data(AccountId),
+    AddressesList = zzhd_mysql:addresses_data(AccountId),
     case collect_address_data(AddressesList, []) of
         [] -> 'no_addresses';
         Values when is_list(Values) ->
@@ -208,7 +208,7 @@ sync_addresses(AccountId) ->
     end.
 
 sync_agreements(AccountId) ->
-    AgrmsList = zzhd_sql:agreements_data(AccountId),
+    AgrmsList = zzhd_mysql:agreements_data(AccountId),
     case collect_agreements_data(AgrmsList, []) of
         [] -> 'no_agreements';
         Values when is_list(Values) ->
@@ -226,7 +226,7 @@ sync_agreements(AccountId) ->
 
 sync_periodic_fees(AccountId) ->
     remove_periodic_fees(AccountId),
-    FeesList = zzhd_sql:get_periodic_fees(AccountId),
+    FeesList = zzhd_mysql:get_periodic_fees(AccountId),
     add_periodic_fees(FeesList, AccountId).
 
 remove_periodic_fees(AccountId) ->
@@ -280,7 +280,7 @@ add_periodic_fees([[FeeId, Qty, From, Till]|FeesLeft], AccountId) ->
     add_periodic_fees(FeesLeft, AccountId).
 
 lb_to_kazoo_sync_accounts_groups(AccountId) ->
-    case zzhd_sql:accounts_groups(AccountId) of
+    case zzhd_mysql:accounts_groups(AccountId) of
         Groups when is_list(Groups) andalso length(Groups) > 0->
             Values =
                 [{[<<"accounts_groups">>,kapps_config:get_binary(<<"zzhd">>, [<<"accounts_groups">>, kz_term:to_binary(Id)])], 'true'}
@@ -292,7 +292,7 @@ lb_to_kazoo_sync_accounts_groups(AccountId) ->
     end.
 
 lb_to_kazoo_sync_accounts_addons_vals_field(LbF, KzK, AccountId) ->
-    case zzhd_sql:get_field(<<"str_value">>, {<<"name">>, LbF}, <<"accounts_addons_vals">>, AccountId) of
+    case zzhd_mysql:get_field(<<"str_value">>, {<<"name">>, LbF}, <<"accounts_addons_vals">>, AccountId) of
       'undefined' -> 'ok';
       <<>> -> 'ok';
       [] -> 'ok';
@@ -369,7 +369,7 @@ kazoo_to_lb_sync_account_field(KzK, LbK, AccountId) ->
         {ok, Doc} ->
             case kz_json:get_value(KzK, Doc) of
                 V when is_binary(V) ->
-                    zzhd_sql:update_field(LbK, V, <<"accounts">>, AccountId),
+                    zzhd_mysql:update_field(LbK, V, <<"accounts">>, AccountId),
                     timer:sleep(500);
                 _ ->
                     'ok'
@@ -387,7 +387,7 @@ kazoo_to_lb_sync_account_type(AccountId) ->
                     <<"personal">> -> 2;
                     _ -> 1
                 end,
-            zzhd_sql:update_field(<<"type">>, Type, <<"accounts">>, AccountId);
+            zzhd_mysql:update_field(<<"type">>, Type, <<"accounts">>, AccountId);
         _ ->
             'ok'
     end.
