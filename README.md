@@ -1,2 +1,2 @@
 # zzhd
-popup backend
+Informer backend
