@@ -1,9 +1,9 @@
 -module(cb_zzhds).
 
 -export([init/0
-         ,allowed_methods/0,allowed_methods/1
-         ,resource_exists/0,resource_exists/1
-         ,validate/1,validate/2
+         ,allowed_methods/0,allowed_methods/1,allowed_methods/2
+         ,resource_exists/0,resource_exists/1,resource_exists/2
+         ,validate/1,validate/2,validate/3
          ,content_types_provided/2
         ]).
 
@@ -49,11 +49,18 @@ allowed_methods(?ACCOUNT_DOCS) ->
 allowed_methods(?ACCOUNT_CDR) ->
     [?HTTP_POST].
 
+-spec allowed_methods(path_token(), path_token()) -> http_methods().
+allowed_methods(?HD_COMMENTS, _) ->
+    [?HTTP_PUT, ?HTTP_DELETE].
+
 -spec resource_exists() -> 'true'.
 resource_exists() -> 'true'.
 
 -spec resource_exists(path_token()) -> 'true'.
 resource_exists(_) -> 'true'.
+
+-spec resource_exists(path_token(), path_token()) -> 'true'.
+resource_exists(?HD_COMMENTS,_) -> 'true'.
 
 -spec content_types_provided(cb_context:context(), path_token()) -> cb_context:context().
 content_types_provided(Context, ?ACCOUNT_DOCS) ->
@@ -135,14 +142,16 @@ validate(Context, ?ACCOUNT_DOCS) ->
 validate(Context, ?ACCOUNT_CDR) ->
     validate_account_cdr(Context, cb_context:req_verb(Context)).
 
+-spec validate(cb_context:context(),path_token(),path_token()) -> cb_context:context().
+validate(Context, ?HD_COMMENTS, CommentId) ->
+    validate_hd_comments(Context, CommentId, cb_context:req_verb(Context)).
+
 -spec validate_hd_comments(cb_context:context(), http_method()) -> cb_context:context().
 validate_hd_comments(Context, ?HTTP_GET) ->
-    lager:info("validate_hd_comments validate/2  req_value consumer_accountId: ~p",[cb_context:req_value(Context, <<"consumer_accountId">>)]),
-    lager:info("validate_hd_comments validate/2  req_value lb_id: ~p",[cb_context:req_value(Context, <<"lb_id">>)]),
-    lager:info("validate_hd_comments validate/2  req_value phone_number: ~p",[cb_context:req_value(Context, <<"phone_number">>)]),
+    lager:info("validate_hd_comments validate/2  req_value informer_id: ~p",[cb_context:req_value(Context, <<"informer_id">>)]),
     QS = cb_context:query_string(Context),
     lager:info("validate_hd_comments validate/2 query_string: ~p",[QS]),
-    case kz_json:get_first_defined([<<"consumer_accountId">>,<<"lb_id">>,<<"phone_number">>], QS) of
+    case kz_json:get_value([<<"informer_id">>], QS) of
         'undefined' ->
             return_hd_comments_all(Context);
         _ ->
@@ -151,11 +160,30 @@ validate_hd_comments(Context, ?HTTP_GET) ->
 validate_hd_comments(Context, ?HTTP_POST) ->
     lager:info("validate_hd_comments/2  req_data: ~p",[cb_context:req_data(Context)]),
     ReqData = cb_context:req_data(Context),
-    Comment = kz_json:get_value(<<"comment">>, ReqData),
-    ConsumerAccountId = kz_json:get_value(<<"consumer_accountId">>, ReqData),
-    lager:info("validate_hd_comments/2  Comment: ~p",[Comment]),
-    lager:info("validate_hd_comments/2  ConsumerAccountId: ~p",[ConsumerAccountId]),
-    Res = pgapp:equery(?ZZHD_PGSQL_POOL, "INSERT INTO public.comments (comment,  kz_account_id) VALUES($1, $2)", [Comment, ConsumerAccountId]),
+    CommentHTML = kz_json:get_value(<<"comment_html">>, ReqData),
+    CommentTEXT = kz_json:get_value(<<"comment_text">>, ReqData),
+    InformerId = kz_json:get_value(<<"informer_id">>, ReqData),
+    lager:info("validate_hd_comments/2  CommentHTML: ~p",[CommentHTML]),
+    lager:info("validate_hd_comments/2  CommentTEXT: ~p",[CommentTEXT]),
+    lager:info("validate_hd_comments/2  InformerId: ~p",[InformerId]),
+    Res = pgapp:equery(?ZZHD_PGSQL_POOL, "INSERT INTO public.comments (comment_html,comment_text,informer_id) VALUES($1, $2, $3)", [CommentHTML, CommentTEXT, InformerId]),
+    lager:info("validate_hd_comments/2 Res: ~p",[Res]),
+    cb_context:set_resp_status(Context, 'success').
+
+-spec validate_hd_comments(cb_context:context(), kz_term:ne_binary(), http_method()) -> cb_context:context().
+validate_hd_comments(Context, CommentId, ?HTTP_DELETE) ->
+    Res = pgapp:equery(?ZZHD_PGSQL_POOL, "DELETE FROM public.comments where comment_id = $1", [kz_term:to_integer(CommentId)]),
+    lager:info("validate_hd_comments/3 Res: ~p",[Res]),
+    cb_context:set_resp_status(Context, 'success');
+validate_hd_comments(Context, CommentId, ?HTTP_PUT) ->
+    lager:info("validate_hd_comments/2  req_data: ~p",[cb_context:req_data(Context)]),
+    ReqData = cb_context:req_data(Context),
+    CommentHTML = kz_json:get_value(<<"comment_html">>, ReqData),
+    CommentTEXT = kz_json:get_value(<<"comment_text">>, ReqData),
+    lager:info("validate_hd_comments/2  CommentHTML: ~p",[CommentHTML]),
+    lager:info("validate_hd_comments/2  CommentTEXT: ~p",[CommentTEXT]),
+    lager:info("validate_hd_comments/2  CommentId: ~p",[CommentId]),
+    Res = pgapp:equery(?ZZHD_PGSQL_POOL, "UPDATE public.comments SET comment_html=$1, comment_text=$2, modified=current_timestamp WHERE comment_id=$3", [CommentHTML, CommentTEXT, kz_term:to_integer(CommentId)]),
     lager:info("validate_hd_comments/2 Res: ~p",[Res]),
     cb_context:set_resp_status(Context, 'success').
 
@@ -226,6 +254,7 @@ account_info_jobj(AccountId) ->
             || [VgId, TarId] <- zzhd_mysql:accounts_tariffs_by_type(2, AccountId)],
     [[_CompanyName, AgrmNum, {AY, AM, AD}]] =
         zzhd_mysql:agreements_creds_by_id(zzhd_mysql:main_agrm_id(AccountId)),
+    LB_Id = zzhd_mysql:lbuid_by_uuid(AccountId),
     kz_json:from_list(
       [{<<"account_balance">>, zzhd_mysql:account_balance(AccountId)}
       ,{<<"main_agrm">>
@@ -235,7 +264,8 @@ account_info_jobj(AccountId) ->
        }
       ,{<<"account_info">>, kz_json:from_list(zzhd_mysql:accounts_table_info(AccountId))}
       ,{<<"kazoo_account_id">>, AccountId}
-      ,{<<"lb_id">>, zzhd_mysql:lbuid_by_uuid(AccountId)}
+      ,{<<"lb_id">>, LB_Id}
+      ,{<<"informer_id">>, zzhd_pgsql:get_informer_id(AccountId, LB_Id)}
       ,{<<"account_status">>, AccountStatus}
       ,{<<"account_payments">>, AccountPayments}
       ,{<<"monthly_fees">>, MonthlyFees}
@@ -250,17 +280,21 @@ return_account_info(Context, AccountId) ->
                                 ]).
 
 return_hd_comments_select(Context) ->
-    case pgapp:equery(?ZZHD_PGSQL_POOL, "SELECT * FROM public.comments", []) of
+    QS = cb_context:query_string(Context),
+    InformerId = kz_json:get_value([<<"informer_id">>], QS),
+    case pgapp:equery(?ZZHD_PGSQL_POOL, "SELECT created,modified,informer_id,comment_id,comment_text,comment_html FROM public.comments where informer_id = $1 order by modified desc", [kz_term:to_integer(InformerId)]) of
         {ok, Columns, Rows} ->
-            Rs = [kz_json:from_list([{<<"comment">>, Comment}
-                                    ,{<<"created">>, maybe_correct_datetime(Created)}
+            Rs = [kz_json:from_list([{<<"created">>, maybe_correct_datetime(Created)}
                                     ,{<<"modified">>, maybe_correct_datetime(Modified)}
-                                    ,{<<"account_id">>, AccountId}
-                                    ,{<<"informer_id">>, InformerId}
+                                    ,{<<"informer_id">>, InfId}
+                                    ,{<<"comment_id">>, CommentId}
+                                    ,{<<"comment_text">>, CommentTEXT}
+                                    ,{<<"comment_html">>, CommentHTML}
                                    ])
-                    || {Comment, Created, Modified, AccountId, InformerId} <- Rows],
+                    || {Created, Modified, InfId, CommentId, CommentTEXT, CommentHTML} <- Rows],
             lager:info("return_hd_comments_select Columns: ~p",[Columns]),
             lager:info("return_hd_comments_select Rows: ~p",[Rows]),
+            lager:info("return_hd_comments_select Rs: ~p",[Rs]),
             cb_context:setters(Context, [{fun cb_context:set_resp_status/2, 'success'}
                                %%         ,{fun cb_context:set_resp_data/2, kz_json:set_value(<<"rows">>, Rs, kz_json:new())}
                                         ,{fun cb_context:set_resp_data/2, Rs}
@@ -273,15 +307,17 @@ return_hd_comments_select(Context) ->
     end.
 
 return_hd_comments_all(Context) ->
-    case pgapp:equery(?ZZHD_PGSQL_POOL, "SELECT * FROM public.comments", []) of
+    case pgapp:equery(?ZZHD_PGSQL_POOL, "SELECT c.created,c.modified,c.informer_id,c.comment_id,c.comment_text,c.comment_html,i.informer_name FROM comments c, identities i where c.informer_id = i.id order by c.modified desc", []) of
         {ok, Columns, Rows} ->
-            Rs = [kz_json:from_list([{<<"comment">>, Comment}
-                                    ,{<<"created">>, maybe_correct_datetime(Created)}
+            Rs = [kz_json:from_list([{<<"created">>, maybe_correct_datetime(Created)}
                                     ,{<<"modified">>, maybe_correct_datetime(Modified)}
-                                    ,{<<"account_id">>, AccountId}
                                     ,{<<"informer_id">>, InformerId}
+                                    ,{<<"comment_id">>, CommentId}
+                                    ,{<<"comment_text">>, CommentTEXT}
+                                    ,{<<"comment_html">>, CommentHTML}
+                                    ,{<<"informer_name">>, InformerName}
                                    ])
-                    || {Comment, Created, Modified, AccountId, InformerId} <- Rows],
+                    || {Created, Modified, InformerId, CommentId, CommentTEXT, CommentHTML, InformerName} <- Rows],
             cb_context:setters(Context, [{fun cb_context:set_resp_status/2, 'success'}
                                         ,{fun cb_context:set_resp_data/2, Rs}
                                         ]);
