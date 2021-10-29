@@ -14,6 +14,7 @@
 -define(ACCOUNT_INFO, <<"account_info">>).
 -define(CID_INFO, <<"cid_info">>).
 -define(HD_INFO, <<"hd_info">>).
+-define(INFORMER_INFO, <<"informer_info">>).
 -define(HD_ACCOUNTS, <<"hd_accounts">>).
 -define(HD_COMMENTS, <<"hd_comments">>).
 -define(ACCOUNT_DOCS, <<"account_docs">>).
@@ -41,6 +42,8 @@ allowed_methods(?CID_INFO) ->
 allowed_methods(?HD_ACCOUNTS) ->
     [?HTTP_GET];
 allowed_methods(?HD_INFO) ->
+    [?HTTP_GET];
+allowed_methods(?INFORMER_INFO) ->
     [?HTTP_GET];
 allowed_methods(?HD_COMMENTS) ->
     [?HTTP_POST, ?HTTP_GET];
@@ -117,6 +120,23 @@ validate(Context, ?CID_INFO) ->
             cb_context:setters(Context, [{fun cb_context:set_resp_status/2, 'success'}
                                         ,{fun cb_context:set_resp_data/2, kz_json:new()}
                                         ])
+    end;
+validate(Context, ?INFORMER_INFO) ->
+    lager:info("validate/2  req_data: ~p",[cb_context:req_data(Context)]),
+    lager:info("validate/2  req_files: ~p",[cb_context:req_files(Context)]),
+    lager:info("validate/2  req_headers: ~p",[cb_context:req_headers(Context)]),
+    lager:info("validate/2  req_nouns: ~p",[cb_context:req_nouns(Context)]),
+    lager:info("validate/2  req_verb: ~p",[cb_context:req_verb(Context)]),
+    lager:info("validate/2  req_id: ~p",[cb_context:req_id(Context)]),
+    lager:info("validate/2  req_value: ~p",[cb_context:req_value(Context, <<"informer_id">>)]),
+    case cb_context:req_value(Context, <<"informer_id">>) of
+        'undefined' ->
+            cb_context:setters(Context, [{fun cb_context:set_resp_status/2, 'success'}
+                                        ,{fun cb_context:set_resp_data/2, kz_json:new()}
+                                        ]);
+        InformerId ->
+            lager:info("validate/2 INFORMER_INFO InformerId: ~p",[InformerId]),
+            return_account_info(Context, zzhd_pgsql:get_kz_by_informer_id(InformerId))
     end;
 validate(Context, ?HD_INFO) ->
     lager:info("validate/2  req_data: ~p",[cb_context:req_data(Context)]),
@@ -252,9 +272,11 @@ account_info_jobj(AccountId) ->
                             ,{'vg_id_ip_addresses', zzhd_mysql:ip_addresses_by_vg_id(VgId)}
                             ])
             || [VgId, TarId] <- zzhd_mysql:accounts_tariffs_by_type(2, AccountId)],
-    [[_CompanyName, AgrmNum, {AY, AM, AD}]] =
+    [[CompanyName, AgrmNum, {AY, AM, AD}]] =
         zzhd_mysql:agreements_creds_by_id(zzhd_mysql:main_agrm_id(AccountId)),
     LB_Id = zzhd_mysql:lbuid_by_uuid(AccountId),
+    InformerId = zzhd_pgsql:get_informer_by_kz_id(AccountId),
+    zzhd_pgsql:maybe_set_informer_name(InformerId, CompanyName),
     kz_json:from_list(
       [{<<"account_balance">>, zzhd_mysql:account_balance(AccountId)}
       ,{<<"main_agrm">>
@@ -265,7 +287,7 @@ account_info_jobj(AccountId) ->
       ,{<<"account_info">>, kz_json:from_list(zzhd_mysql:accounts_table_info(AccountId))}
       ,{<<"kazoo_account_id">>, AccountId}
       ,{<<"lb_id">>, LB_Id}
-      ,{<<"informer_id">>, zzhd_pgsql:get_informer_id(AccountId, LB_Id)}
+      ,{<<"informer_id">>, zzhd_pgsql:get_informer_by_kz_id(AccountId)}
       ,{<<"account_status">>, AccountStatus}
       ,{<<"account_payments">>, AccountPayments}
       ,{<<"monthly_fees">>, MonthlyFees}
