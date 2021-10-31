@@ -15,6 +15,8 @@
 -define(CID_INFO, <<"cid_info">>).
 -define(HD_INFO, <<"hd_info">>).
 -define(INFORMER_INFO, <<"informer_info">>).
+-define(INFORMER_NAME, <<"informer_name">>).
+-define(INFORMER_NAME_FILL, <<"informer_name_fill">>).
 -define(HD_ACCOUNTS, <<"hd_accounts">>).
 -define(HD_COMMENTS, <<"hd_comments">>).
 -define(ACCOUNT_DOCS, <<"account_docs">>).
@@ -44,7 +46,7 @@ allowed_methods(?HD_ACCOUNTS) ->
 allowed_methods(?HD_INFO) ->
     [?HTTP_GET];
 allowed_methods(?INFORMER_INFO) ->
-    [?HTTP_GET];
+    [?HTTP_GET, ?HTTP_PUT];
 allowed_methods(?HD_COMMENTS) ->
     [?HTTP_POST, ?HTTP_GET];
 allowed_methods(?ACCOUNT_DOCS) ->
@@ -53,6 +55,8 @@ allowed_methods(?ACCOUNT_CDR) ->
     [?HTTP_POST].
 
 -spec allowed_methods(path_token(), path_token()) -> http_methods().
+allowed_methods(?INFORMER_INFO, ?INFORMER_NAME_FILL) ->
+    [?HTTP_POST];
 allowed_methods(?HD_COMMENTS, _) ->
     [?HTTP_PUT, ?HTTP_DELETE].
 
@@ -63,6 +67,7 @@ resource_exists() -> 'true'.
 resource_exists(_) -> 'true'.
 
 -spec resource_exists(path_token(), path_token()) -> 'true'.
+resource_exists(?INFORMER_INFO,_) -> 'true';
 resource_exists(?HD_COMMENTS,_) -> 'true'.
 
 -spec content_types_provided(cb_context:context(), path_token()) -> cb_context:context().
@@ -115,7 +120,7 @@ validate(Context, ?CID_INFO) ->
     Num = kz_term:to_binary([Ch || Ch <- kz_term:to_list(Number), Ch >= $0 andalso Ch < $9]),
     case knm_number:lookup_account(Num) of
         {'ok', AccountId, _ExtraOptions} ->
-            return_account_info(Context, AccountId);
+            return_all_info(Context, zzhd_pgsql:get_informer_by_kz_id(AccountId), AccountId);
         {_, _R}=Error ->
             cb_context:setters(Context, [{fun cb_context:set_resp_status/2, 'success'}
                                         ,{fun cb_context:set_resp_data/2, kz_json:new()}
@@ -135,8 +140,7 @@ validate(Context, ?INFORMER_INFO) ->
                                         ,{fun cb_context:set_resp_data/2, kz_json:new()}
                                         ]);
         InformerId ->
-            lager:info("validate/2 INFORMER_INFO InformerId: ~p",[InformerId]),
-            return_account_info(Context, zzhd_pgsql:get_kz_by_informer_id(InformerId))
+            validate_informer_info(Context, InformerId, cb_context:req_verb(Context))
     end;
 validate(Context, ?HD_INFO) ->
     lager:info("validate/2  req_data: ~p",[cb_context:req_data(Context)]),
@@ -149,7 +153,7 @@ validate(Context, ?HD_INFO) ->
     case cb_context:req_value(Context, <<"consumer_accountId">>) of
         ?MATCH_ACCOUNT_RAW(AccountId) ->
             lager:info("validate/2 HD_INFO Account Matched"),
-            return_account_info(Context, AccountId);
+            return_all_info(Context, zzhd_pgsql:get_informer_by_kz_id(AccountId), AccountId);
         _ ->
             cb_context:setters(Context, [{fun cb_context:set_resp_status/2, 'success'}
                                         ,{fun cb_context:set_resp_data/2, kz_json:new()}
@@ -163,6 +167,8 @@ validate(Context, ?ACCOUNT_CDR) ->
     validate_account_cdr(Context, cb_context:req_verb(Context)).
 
 -spec validate(cb_context:context(),path_token(),path_token()) -> cb_context:context().
+validate(Context, ?INFORMER_INFO, ?INFORMER_NAME_FILL) ->
+    validate_informer_name_fill(Context, cb_context:req_verb(Context));
 validate(Context, ?HD_COMMENTS, CommentId) ->
     validate_hd_comments(Context, CommentId, cb_context:req_verb(Context)).
 
@@ -234,8 +240,25 @@ validate_zzhd(Context, _, _AccountId) ->
 -spec validate_account_info(cb_context:context(), http_method()) -> cb_context:context().
 validate_account_info(Context, ?HTTP_GET) ->
     AccountId = cb_context:account_id(Context),
-    return_account_info(Context, AccountId).
+    return_all_info(Context, zzhd_pgsql:get_informer_by_kz_id(AccountId), AccountId).
 
+info_jobj(InformerId, AccountId) ->
+    List = props:filter_undefined(
+           [{<<"informer_info_jobj">>, informer_info_jobj(InformerId)}
+           ,{<<"account_info_jobj">>, account_info_jobj(AccountId)}
+           ]),
+    kz_json:from_list(List).
+    
+informer_info_jobj('undefined') -> 'undefined';
+informer_info_jobj(InformerId) ->
+    List = props:filter_undefined(
+           [{<<"informer_name">>, zzhd_pgsql:get_informer_name(InformerId)}
+           ,{<<"emails">>, zzhd_pgsql:get_informer_emails(InformerId)}
+           ,{<<"phone_numbers">>, zzhd_pgsql:get_informer_phonenumbers(InformerId)}
+           ]),
+    kz_json:from_list(List).
+
+account_info_jobj('undefined') -> 'undefined';
 account_info_jobj(AccountId) ->
     [_StatusID, BlockDate] = zzhd_mysql:account_status(AccountId),
     AccountStatus =
@@ -295,8 +318,8 @@ account_info_jobj(AccountId) ->
       ,{<<"ip_addresses_by_tariff">>, IPAddressesByTariff}
       ]).
 
-return_account_info(Context, AccountId) ->
-    JObj = account_info_jobj(AccountId),
+return_all_info(Context, InformerId, AccountId) ->
+    JObj = info_jobj(InformerId, AccountId),
     cb_context:setters(Context, [{fun cb_context:set_resp_data/2, JObj}
                                 ,{fun cb_context:set_resp_status/2, 'success'}
                                 ]).
@@ -358,6 +381,36 @@ maybe_correct_datetime({{_, _, _}=Date, {H, M, S}}) ->
     kz_time:gregorian_seconds_to_unix_seconds(calendar:datetime_to_gregorian_seconds({Date,{H,M,kz_term:to_integer(S)}}));
 maybe_correct_datetime(Field) ->
     Field.
+
+validate_informer_info(Context, InformerId, ?HTTP_GET) ->
+    lager:info("validate/2 INFORMER_INFO InformerId: ~p",[InformerId]),
+    return_all_info(Context, InformerId, zzhd_pgsql:get_kz_by_informer_id(InformerId));
+validate_informer_info(Context, InformerId, ?HTTP_PUT) ->
+    lager:info("validate/2 INFORMER_INFO InformerId: ~p",[InformerId]),
+    ReqData = cb_context:req_data(Context),
+    case kz_json:get_value(<<"informer_name">>, ReqData) of
+        'undefined' -> 'ok';
+        InformerName -> 
+            Res = zzhd_pgsql:set_informer_name(InformerId, re:replace(InformerName, "[^A-Za-z0-9 '\"]", "", [global, {return, binary}])),
+            lager:info("validate/2 INFORMER_INFO Res: ~p",[Res]),
+            cb_context:setters(Context, [{fun cb_context:set_resp_status/2, 'success'}
+                                        ,{fun cb_context:set_resp_data/2, kz_json:new()}
+                                        ])
+    end.
+
+validate_informer_name_fill(Context, ?HTTP_POST) ->
+    ReqData = cb_context:req_data(Context),
+    InformerId = kz_json:get_value(<<"informer_id">>, ReqData),
+    AccountId = zzhd_pgsql:get_kz_by_informer_id(InformerId),
+    Props = zzhd_mysql:accounts_table_info(AccountId),
+    case props:get_value(name, Props) of
+        LBName when is_binary(LBName) ->
+            zzhd_pgsql:set_informer_name(InformerId, LBName);
+        _ -> 'ok'
+    end,
+    cb_context:setters(Context, [{fun cb_context:set_resp_status/2, 'success'}
+                                ,{fun cb_context:set_resp_data/2, kz_json:new()}
+                                ]).
 
 -spec validate_account_docs(cb_context:context(), http_method()) -> cb_context:context().
 validate_account_docs(Context, ?HTTP_GET) ->

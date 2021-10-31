@@ -6,6 +6,9 @@
         ,get_kz_by_informer_id/1
         ,maybe_set_informer_name/2
         ,set_informer_name/2
+        ,get_informer_name/1
+        ,get_informer_emails/1
+        ,get_informer_phonenumbers/1
         ]).
 
 -include_lib("zzhd.hrl").
@@ -58,4 +61,25 @@ set_informer_name(InformerId, InformerName) ->
                 ,"UPDATE identities SET informer_name=$1  WHERE id=$2"
                 ,[InformerName, kz_term:to_integer(InformerId)]
                 ).
+
+-spec get_informer_name(kz_term:ne_binary()|integer()) -> any().
+get_informer_name(InformerId) ->
+    case pgapp:equery(?ZZHD_PGSQL_POOL, "select informer_name from identities where id = $1", [kz_term:to_integer(InformerId)]) of
+        {ok,_,[{IName}]} when is_binary(IName) -> IName;
+        _ -> 'undefined'
+    end.
+
+-spec get_informer_emails(kz_term:ne_binary()|integer()) -> any().
+get_informer_emails(InformerId) ->
+    case pgapp:equery(?ZZHD_PGSQL_POOL, "select email_address from email_addresses where informer_id = $1", [kz_term:to_integer(InformerId)]) of
+        {ok,_,Emails} -> Emails;
+        _ -> 'undefined'
+    end.
+
+-spec get_informer_phonenumbers(kz_term:ne_binary()|integer()) -> any().
+get_informer_phonenumbers(InformerId) ->
+    case pgapp:equery(?ZZHD_PGSQL_POOL, "select phonenumber from phonenumbers where informer_id = $1", [kz_term:to_integer(InformerId)]) of
+        {ok,_,Emails} -> Emails;
+        _ -> 'undefined'
+    end.
 
