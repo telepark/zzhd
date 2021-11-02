@@ -393,10 +393,16 @@ validate_informer_info(Context, InformerId, ?HTTP_PUT) ->
         InformerName -> 
             Res = zzhd_pgsql:set_informer_name(InformerId, re:replace(InformerName, "[^A-Za-z0-9 '\"]", "", [global, {return, binary}])),
             lager:info("validate/2 INFORMER_INFO Res: ~p",[Res]),
-            cb_context:setters(Context, [{fun cb_context:set_resp_status/2, 'success'}
-                                        ,{fun cb_context:set_resp_data/2, kz_json:new()}
-                                        ])
-    end.
+    end,
+    case kz_json:get_value(<<"informer_email">>, ReqData) of
+        'undefined' -> 'ok';
+        InformerEmail -> 
+            Res = zzhd_pgsql:set_informer_name(InformerId, re:replace(InformerName, "[^A-Za-z0-9 '\"]", "", [global, {return, binary}])),
+            lager:info("validate/2 INFORMER_INFO Res: ~p",[Res]),
+    end,
+    cb_context:setters(Context, [{fun cb_context:set_resp_status/2, 'success'}
+                                ,{fun cb_context:set_resp_data/2, kz_json:new()}
+                                ]).
 
 validate_informer_name_fill(Context, ?HTTP_POST) ->
     ReqData = cb_context:req_data(Context),

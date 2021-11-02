@@ -83,3 +83,17 @@ get_informer_phonenumbers(InformerId) ->
         _ -> 'undefined'
     end.
 
+-spec set_informer_email(kz_term:ne_binary()|integer(), kz_term:ne_binary()) -> any().
+set_informer_email(InformerId, InformerEmail) ->
+    pgapp:equery(?ZZHD_PGSQL_POOL
+                ,"INSERT INTO email_addresses (informer_id, email_address) VALUES($1,$2)"
+                ,[kz_term:to_integer(InformerId), InformerEmail]
+                ).
+
+-spec set_informer_email(kz_term:ne_binary()|integer(), kz_term:ne_binary()) -> any().
+set_informer_email(InformerId, InformerEmail) ->
+    pgapp:equery(?ZZHD_PGSQL_POOL
+                ,"INSERT INTO email_addresses (informer_id, email_address) VALUES($1,$2)"
+                ,[kz_term:to_integer(InformerId), InformerEmail]
+                ).
+
