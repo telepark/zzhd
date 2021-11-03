@@ -392,13 +392,19 @@ validate_informer_info(Context, InformerId, ?HTTP_PUT) ->
         'undefined' -> 'ok';
         InformerName -> 
             Res = zzhd_pgsql:set_informer_name(InformerId, re:replace(InformerName, "[^A-Za-z0-9 '\"]", "", [global, {return, binary}])),
-            lager:info("validate/2 INFORMER_INFO Res: ~p",[Res]),
+            lager:info("validate/2 INFORMER_INFO Res: ~p",[Res])
+    end,
+    case kz_json:get_value(<<"informer_phonenumber">>, ReqData) of
+        'undefined' -> 'ok';
+        InformerPhoneNumber -> 
+            ResPN = zzhd_pgsql:set_informer_phonenumber(InformerId, re:replace(InformerPhoneNumber, "[^0-9+]", "", [global, {return, binary}])),
+            lager:info("validate/2 INFORMER_INFO ResPN: ~p",[ResPN])
     end,
     case kz_json:get_value(<<"informer_email">>, ReqData) of
         'undefined' -> 'ok';
         InformerEmail -> 
-            Res = zzhd_pgsql:set_informer_name(InformerId, re:replace(InformerName, "[^A-Za-z0-9 '\"]", "", [global, {return, binary}])),
-            lager:info("validate/2 INFORMER_INFO Res: ~p",[Res]),
+            ResEml = zzhd_pgsql:set_informer_email(InformerId, re:replace(InformerEmail, "[^A-Za-z0-9@ '\"]", "", [global, {return, binary}])),
+            lager:info("validate/2 INFORMER_INFO Res: ~p",[ResEml])
     end,
     cb_context:setters(Context, [{fun cb_context:set_resp_status/2, 'success'}
                                 ,{fun cb_context:set_resp_data/2, kz_json:new()}

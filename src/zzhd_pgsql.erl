@@ -9,6 +9,8 @@
         ,get_informer_name/1
         ,get_informer_emails/1
         ,get_informer_phonenumbers/1
+        ,set_informer_phonenumber/2
+        ,set_informer_email/2
         ]).
 
 -include_lib("zzhd.hrl").
@@ -72,22 +74,22 @@ get_informer_name(InformerId) ->
 -spec get_informer_emails(kz_term:ne_binary()|integer()) -> any().
 get_informer_emails(InformerId) ->
     case pgapp:equery(?ZZHD_PGSQL_POOL, "select email_address from email_addresses where informer_id = $1", [kz_term:to_integer(InformerId)]) of
-        {ok,_,Emails} -> Emails;
+        {ok,_,Emails} -> normalise_result(Emails);
         _ -> 'undefined'
     end.
 
 -spec get_informer_phonenumbers(kz_term:ne_binary()|integer()) -> any().
 get_informer_phonenumbers(InformerId) ->
     case pgapp:equery(?ZZHD_PGSQL_POOL, "select phonenumber from phonenumbers where informer_id = $1", [kz_term:to_integer(InformerId)]) of
-        {ok,_,Emails} -> Emails;
+        {ok,_,Emails} -> normalise_result(Emails);
         _ -> 'undefined'
     end.
 
--spec set_informer_email(kz_term:ne_binary()|integer(), kz_term:ne_binary()) -> any().
-set_informer_email(InformerId, InformerEmail) ->
+-spec set_informer_phonenumber(kz_term:ne_binary()|integer(), kz_term:ne_binary()) -> any().
+set_informer_phonenumber(InformerId, InformerPhoneNumber) ->
     pgapp:equery(?ZZHD_PGSQL_POOL
-                ,"INSERT INTO email_addresses (informer_id, email_address) VALUES($1,$2)"
-                ,[kz_term:to_integer(InformerId), InformerEmail]
+                ,"INSERT INTO phonenumbers (informer_id, phonenumber) VALUES($1,$2)"
+                ,[kz_term:to_integer(InformerId), InformerPhoneNumber]
                 ).
 
 -spec set_informer_email(kz_term:ne_binary()|integer(), kz_term:ne_binary()) -> any().
@@ -97,3 +99,7 @@ set_informer_email(InformerId, InformerEmail) ->
                 ,[kz_term:to_integer(InformerId), InformerEmail]
                 ).
 
+
+normalise_result([]) -> [];
+normalise_result(List) when is_list(List) -> [C || {C} <- List];
+normalise_result(R) -> R.
