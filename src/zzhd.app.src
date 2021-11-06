@@ -1,10 +1,10 @@
 {application, zzhd,
  [
-  {description, "ZZLB - Bridge to LanBilling over MySQL"},
+  {description, "ZZHD - Bridge to LanBilling and Kayako"},
   {env,[{is_kazoo_app,true}]},
   {vsn,"4.3.0"},
   {modules, []},
-  {registered, [zzhd_listener, zzhd_sup]},
+  {registered, [zzhd_sup]},
   {applications, [ kernel
                  , stdlib
                  , crypto
@@ -12,9 +12,6 @@
                  , kazoo_apps
                  , kazoo_amqp
                  , kazoo_data
-
-                 , hotornot
-                 , jonny5
 
                  , lager
                  ]},

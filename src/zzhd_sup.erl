@@ -18,7 +18,7 @@
 
 %% Helper macro for declaring children of supervisor
 -define(CHILDREN, [?CACHE('zzhd_cache')
-                   ,?WORKER('zzhd_listener')
+        %           ,?WORKER('zzhd_listener')
                   ]).
 
 %% ===================================================================
@@ -48,9 +48,10 @@ start_link() ->
 %%--------------------------------------------------------------------
 -spec init(any()) -> kz_types:sup_init_ret().
 init([]) ->
-    kt_zzhd:init(),
     _ = zzhd_pgsql:maybe_pgsql_app(),
-    Children = ?CHILDREN ++ zzhd_mysql:maybe_mysql_child(),
+    _ = zzhd_kayako:maybe_kayako_app(),
+    Children = ?CHILDREN
+                ++ zzhd_mysql:maybe_mysql_child(),
     RestartStrategy = 'one_for_one',
     MaxRestarts = 5,
     MaxSecondsBetweenRestarts = 10,

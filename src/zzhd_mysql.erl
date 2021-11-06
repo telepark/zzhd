@@ -7,6 +7,7 @@
         ,account_balance/1
         ,main_agrm_id/1
         ,accounts_table_info/1
+        ,get_accounts_phonenumbers/1
         ,account_status/1
         ,account_payments/1
         ,monthly_fees/1
@@ -120,6 +121,21 @@ accounts_table_info(AccountId) ->
                     ,{gl_buhg_u, GlBuhgU}
                     ,{emails, [kz_binary:strip(Email) || Email <- binary:split(Emails, [<<",">>,<<";">>], [global])]}
                     ];
+                _ -> [] 
+            end
+    end.
+
+-spec get_accounts_phonenumbers(kz_term:ne_binary()) -> any().
+get_accounts_phonenumbers(AccountId) ->
+    case lbuid_by_uuid(AccountId) of
+        'undefined' -> [];
+        UID ->
+            case mysql_poolboy:query(?ZZHD_MYSQL_POOL
+                                    ,<<"select phone from accounts where uid = ? limit 1">>
+                                    ,[UID])
+            of
+                {ok,_,[[Phones]]} ->
+                    [kz_binary:strip(Phone) || Phone <- binary:split(Phones, [<<",">>,<<";">>], [global])];
                 _ -> [] 
             end
     end.

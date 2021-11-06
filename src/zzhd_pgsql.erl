@@ -10,7 +10,9 @@
         ,get_informer_emails/1
         ,get_informer_phonenumbers/1
         ,set_informer_phonenumber/2
+        ,delete_informer_phonenumber/2
         ,set_informer_email/2
+        ,delete_informer_email/2
         ]).
 
 -include_lib("zzhd.hrl").
@@ -92,10 +94,24 @@ set_informer_phonenumber(InformerId, InformerPhoneNumber) ->
                 ,[kz_term:to_integer(InformerId), InformerPhoneNumber]
                 ).
 
+-spec delete_informer_phonenumber(kz_term:ne_binary()|integer(), kz_term:ne_binary()) -> any().
+delete_informer_phonenumber(InformerId, InformerPhoneNumber) ->
+    pgapp:equery(?ZZHD_PGSQL_POOL
+                ,"DELETE FROM public.phonenumbers WHERE informer_id = $1 AND phonenumber = $2"
+                ,[kz_term:to_integer(InformerId), InformerPhoneNumber]
+                ).
+
 -spec set_informer_email(kz_term:ne_binary()|integer(), kz_term:ne_binary()) -> any().
 set_informer_email(InformerId, InformerEmail) ->
     pgapp:equery(?ZZHD_PGSQL_POOL
                 ,"INSERT INTO email_addresses (informer_id, email_address) VALUES($1,$2)"
+                ,[kz_term:to_integer(InformerId), InformerEmail]
+                ).
+
+-spec delete_informer_email(kz_term:ne_binary()|integer(), kz_term:ne_binary()) -> any().
+delete_informer_email(InformerId, InformerEmail) ->
+    pgapp:equery(?ZZHD_PGSQL_POOL
+                ,"DELETE FROM public.email_addresses WHERE informer_id = $1 AND email_address = $2"
                 ,[kz_term:to_integer(InformerId), InformerEmail]
                 ).
 

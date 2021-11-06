@@ -9,6 +9,7 @@
 -define(ONBILL_DB(ResellerId), <<"onbill-", ResellerId/binary>>).
 
 -define(ZZHD_MYSQL_POOL, 'zzhd_mysql_pool').
+-define(ZZHD_KAYAKO_POOL, 'zzhd_kayako_pool').
 -define(ZZHD_PGSQL_POOL, 'zzhd_pgsql_pool').
 
 -define(ZZLB_HRL, 'true').

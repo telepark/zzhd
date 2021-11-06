@@ -4,7 +4,6 @@
          ,allowed_methods/0,allowed_methods/1,allowed_methods/2
          ,resource_exists/0,resource_exists/1,resource_exists/2
          ,validate/1,validate/2,validate/3
-         ,content_types_provided/2
         ]).
 
 -include("/opt/kazoo/applications/crossbar/src/crossbar.hrl").
@@ -19,8 +18,6 @@
 -define(INFORMER_NAME_FILL, <<"informer_name_fill">>).
 -define(HD_ACCOUNTS, <<"hd_accounts">>).
 -define(HD_COMMENTS, <<"hd_comments">>).
--define(ACCOUNT_DOCS, <<"account_docs">>).
--define(ACCOUNT_CDR, <<"account_cdr">>).
 
 -type payload() :: {cowboy_req:req(), cb_context:context()}.
 -export_type([payload/0]).
@@ -29,7 +26,6 @@
 init() ->
     _ = crossbar_bindings:bind(<<"*.allowed_methods.zzhds">>, ?MODULE, 'allowed_methods'),
     _ = crossbar_bindings:bind(<<"*.resource_exists.zzhds">>, ?MODULE, 'resource_exists'),
-    _ = crossbar_bindings:bind(<<"*.content_types_provided.zzhds">>, ?MODULE, 'content_types_provided'),
     _ = crossbar_bindings:bind(<<"*.validate.zzhds">>, ?MODULE, 'validate').
 
 -spec allowed_methods() -> http_methods().
@@ -46,13 +42,9 @@ allowed_methods(?HD_ACCOUNTS) ->
 allowed_methods(?HD_INFO) ->
     [?HTTP_GET];
 allowed_methods(?INFORMER_INFO) ->
-    [?HTTP_GET, ?HTTP_PUT];
+    [?HTTP_GET, ?HTTP_PUT, ?HTTP_DELETE];
 allowed_methods(?HD_COMMENTS) ->
-    [?HTTP_POST, ?HTTP_GET];
-allowed_methods(?ACCOUNT_DOCS) ->
-    [?HTTP_POST, ?HTTP_GET];
-allowed_methods(?ACCOUNT_CDR) ->
-    [?HTTP_POST].
+    [?HTTP_POST, ?HTTP_GET].
 
 -spec allowed_methods(path_token(), path_token()) -> http_methods().
 allowed_methods(?INFORMER_INFO, ?INFORMER_NAME_FILL) ->
@@ -69,25 +61,6 @@ resource_exists(_) -> 'true'.
 -spec resource_exists(path_token(), path_token()) -> 'true'.
 resource_exists(?INFORMER_INFO,_) -> 'true';
 resource_exists(?HD_COMMENTS,_) -> 'true'.
-
--spec content_types_provided(cb_context:context(), path_token()) -> cb_context:context().
-content_types_provided(Context, ?ACCOUNT_DOCS) ->
-    case cb_context:req_verb(Context) of
-        ?HTTP_GET ->
-            CTPs = ?CONTENT_PROVIDED ++ [{'to_pdf', ?PDF_CONTENT_TYPES}],
-            cb_context:add_content_types_provided(Context, CTPs);
-        _Verb ->
-            Context
-    end;
-content_types_provided(Context, _) ->
-    Context.
-
--spec get_pdf(kz_term:ne_binary(), kz_term:ne_binary(), cb_context:context()) -> cb_context:context().
-get_pdf(Period, Filename, Context) ->
-    {ok, PDF} = file:read_file(<<"/usr/local/billing/reports/", Period/binary, "/", Filename/binary>>),
-    CD = <<"attachment; filename=\"", Filename/binary>>,
-    Context1 = cb_context:set_resp_header(Context, <<"content-disposition">>, CD),
-    cb_context:set_resp_data(Context1, PDF).
 
 -spec validate(cb_context:context()) -> cb_context:context().
 validate(Context) ->
@@ -127,13 +100,6 @@ validate(Context, ?CID_INFO) ->
                                         ])
     end;
 validate(Context, ?INFORMER_INFO) ->
-    lager:info("validate/2  req_data: ~p",[cb_context:req_data(Context)]),
-    lager:info("validate/2  req_files: ~p",[cb_context:req_files(Context)]),
-    lager:info("validate/2  req_headers: ~p",[cb_context:req_headers(Context)]),
-    lager:info("validate/2  req_nouns: ~p",[cb_context:req_nouns(Context)]),
-    lager:info("validate/2  req_verb: ~p",[cb_context:req_verb(Context)]),
-    lager:info("validate/2  req_id: ~p",[cb_context:req_id(Context)]),
-    lager:info("validate/2  req_value: ~p",[cb_context:req_value(Context, <<"informer_id">>)]),
     case cb_context:req_value(Context, <<"informer_id">>) of
         'undefined' ->
             cb_context:setters(Context, [{fun cb_context:set_resp_status/2, 'success'}
@@ -143,13 +109,6 @@ validate(Context, ?INFORMER_INFO) ->
             validate_informer_info(Context, InformerId, cb_context:req_verb(Context))
     end;
 validate(Context, ?HD_INFO) ->
-    lager:info("validate/2  req_data: ~p",[cb_context:req_data(Context)]),
-    lager:info("validate/2  req_files: ~p",[cb_context:req_files(Context)]),
-    lager:info("validate/2  req_headers: ~p",[cb_context:req_headers(Context)]),
-    lager:info("validate/2  req_nouns: ~p",[cb_context:req_nouns(Context)]),
-    lager:info("validate/2  req_verb: ~p",[cb_context:req_verb(Context)]),
-    lager:info("validate/2  req_id: ~p",[cb_context:req_id(Context)]),
-    lager:info("validate/2  req_value: ~p",[cb_context:req_value(Context, <<"consumer_accountId">>)]),
     case cb_context:req_value(Context, <<"consumer_accountId">>) of
         ?MATCH_ACCOUNT_RAW(AccountId) ->
             lager:info("validate/2 HD_INFO Account Matched"),
@@ -160,11 +119,7 @@ validate(Context, ?HD_INFO) ->
                                         ])
     end;
 validate(Context, ?HD_COMMENTS) ->
-    validate_hd_comments(Context, cb_context:req_verb(Context));
-validate(Context, ?ACCOUNT_DOCS) ->
-    validate_account_docs(Context, cb_context:req_verb(Context));
-validate(Context, ?ACCOUNT_CDR) ->
-    validate_account_cdr(Context, cb_context:req_verb(Context)).
+    validate_hd_comments(Context, cb_context:req_verb(Context)).
 
 -spec validate(cb_context:context(),path_token(),path_token()) -> cb_context:context().
 validate(Context, ?INFORMER_INFO, ?INFORMER_NAME_FILL) ->
@@ -189,9 +144,6 @@ validate_hd_comments(Context, ?HTTP_POST) ->
     CommentHTML = kz_json:get_value(<<"comment_html">>, ReqData),
     CommentTEXT = kz_json:get_value(<<"comment_text">>, ReqData),
     InformerId = kz_json:get_value(<<"informer_id">>, ReqData),
-    lager:info("validate_hd_comments/2  CommentHTML: ~p",[CommentHTML]),
-    lager:info("validate_hd_comments/2  CommentTEXT: ~p",[CommentTEXT]),
-    lager:info("validate_hd_comments/2  InformerId: ~p",[InformerId]),
     Res = pgapp:equery(?ZZHD_PGSQL_POOL, "INSERT INTO public.comments (comment_html,comment_text,informer_id) VALUES($1, $2, $3)", [CommentHTML, CommentTEXT, InformerId]),
     lager:info("validate_hd_comments/2 Res: ~p",[Res]),
     cb_context:set_resp_status(Context, 'success').
@@ -206,9 +158,6 @@ validate_hd_comments(Context, CommentId, ?HTTP_PUT) ->
     ReqData = cb_context:req_data(Context),
     CommentHTML = kz_json:get_value(<<"comment_html">>, ReqData),
     CommentTEXT = kz_json:get_value(<<"comment_text">>, ReqData),
-    lager:info("validate_hd_comments/2  CommentHTML: ~p",[CommentHTML]),
-    lager:info("validate_hd_comments/2  CommentTEXT: ~p",[CommentTEXT]),
-    lager:info("validate_hd_comments/2  CommentId: ~p",[CommentId]),
     Res = pgapp:equery(?ZZHD_PGSQL_POOL, "UPDATE public.comments SET comment_html=$1, comment_text=$2, modified=current_timestamp WHERE comment_id=$3", [CommentHTML, CommentTEXT, kz_term:to_integer(CommentId)]),
     lager:info("validate_hd_comments/2 Res: ~p",[Res]),
     cb_context:set_resp_status(Context, 'success').
@@ -391,7 +340,7 @@ validate_informer_info(Context, InformerId, ?HTTP_PUT) ->
     case kz_json:get_value(<<"informer_name">>, ReqData) of
         'undefined' -> 'ok';
         InformerName -> 
-            Res = zzhd_pgsql:set_informer_name(InformerId, re:replace(InformerName, "[^A-Za-z0-9 '\"]", "", [global, {return, binary}])),
+            Res = zzhd_pgsql:set_informer_name(InformerId, re:replace(InformerName, "[^A-Za-z0-9@.\-_~+]", "", [global, {return, binary}])),
             lager:info("validate/2 INFORMER_INFO Res: ~p",[Res])
     end,
     case kz_json:get_value(<<"informer_phonenumber">>, ReqData) of
@@ -403,7 +352,25 @@ validate_informer_info(Context, InformerId, ?HTTP_PUT) ->
     case kz_json:get_value(<<"informer_email">>, ReqData) of
         'undefined' -> 'ok';
         InformerEmail -> 
-            ResEml = zzhd_pgsql:set_informer_email(InformerId, re:replace(InformerEmail, "[^A-Za-z0-9@ '\"]", "", [global, {return, binary}])),
+            ResEml = zzhd_pgsql:set_informer_email(InformerId, re:replace(InformerEmail, "[^A-Za-z0-9@.\-_~+]", "", [global, {return, binary}])),
+            lager:info("validate/2 INFORMER_INFO Res: ~p",[ResEml])
+    end,
+    cb_context:setters(Context, [{fun cb_context:set_resp_status/2, 'success'}
+                                ,{fun cb_context:set_resp_data/2, kz_json:new()}
+                                ]);
+validate_informer_info(Context, InformerId, ?HTTP_DELETE) ->
+    lager:info("validate/2 INFORMER_INFO InformerId: ~p",[InformerId]),
+    ReqData = cb_context:req_data(Context),
+    case kz_json:get_value(<<"informer_phonenumber">>, ReqData) of
+        'undefined' -> 'ok';
+        InformerPhoneNumber -> 
+            ResPN = zzhd_pgsql:delete_informer_phonenumber(InformerId, re:replace(InformerPhoneNumber, "[^0-9+]", "", [global, {return, binary}])),
+            lager:info("validate/2 INFORMER_INFO ResPN: ~p",[ResPN])
+    end,
+    case kz_json:get_value(<<"informer_email">>, ReqData) of
+        'undefined' -> 'ok';
+        InformerEmail -> 
+            ResEml = zzhd_pgsql:delete_informer_email(InformerId, re:replace(InformerEmail, "[^A-Za-z0-9@.\-]", "", [global, {return, binary}])),
             lager:info("validate/2 INFORMER_INFO Res: ~p",[ResEml])
     end,
     cb_context:setters(Context, [{fun cb_context:set_resp_status/2, 'success'}
@@ -423,95 +390,4 @@ validate_informer_name_fill(Context, ?HTTP_POST) ->
     cb_context:setters(Context, [{fun cb_context:set_resp_status/2, 'success'}
                                 ,{fun cb_context:set_resp_data/2, kz_json:new()}
                                 ]).
-
--spec validate_account_docs(cb_context:context(), http_method()) -> cb_context:context().
-validate_account_docs(Context, ?HTTP_GET) ->
-    lager:info("IAM validate_account_docs GET"),
-    Nouns = cb_context:req_nouns(Context),
-    lager:info("validate_account_docs IAMNOUNS: ~p",[Nouns]),
-    QS = cb_context:query_string(Context),
-    lager:info("validate_account_docs IAMQS: ~p",[QS]),
-    case {kz_json:get_value(<<"period">>, QS) ,kz_json:get_value(<<"order_id">>, QS)} of
-        {undefined, _} ->
-           cb_context:add_system_error('forbidden', Context);
-        {_, undefined} ->
-           cb_context:add_system_error('forbidden', Context);
-        {Period, OrderId} ->
-           cb_context:set_resp_status(get_pdf(Period, <<OrderId/binary, ".pdf">>, Context), 'success')
-    end;
-validate_account_docs(Context, ?HTTP_POST) ->
-    AccountId = cb_context:account_id(Context),
-    ReqData = cb_context:req_data(Context),
-    {Year, Month} =
-        case kz_json:get_value(<<"year">>, ReqData) == 'undefined'
-               orelse 
-             kz_json:get_value(<<"month">>, ReqData) == 'undefined'
-        of
-            true ->
-                {Y, M, _} = erlang:date(),
-                {kz_term:to_binary(Y), kz_term:to_binary(M)};
-            false ->
-                {kz_json:get_value(<<"year">>, ReqData)
-                ,kz_json:get_value(<<"month">>, ReqData)}
-        end,
-    RespJObj = kz_json:from_list(
-      [{<<"proformas">>, docs_list_to_json(zzhd_mysql:get_docs_list(Year, Month, <<"1">>, AccountId))}
-      ,{<<"acts">>, docs_list_to_json(zzhd_mysql:get_docs_list(Year, Month, <<"2">>, AccountId))}
-      ,{<<"vat_invoices">>, docs_list_to_json(zzhd_mysql:get_docs_list(Year, Month, <<"3">>, AccountId))}
-      ,{<<"calls_reports_pdf">>, docs_list_to_json(zzhd_mysql:get_docs_list(Year, Month, <<"43">>, AccountId))}
-      ,{<<"account_id">>, AccountId}
-      ]),
-    cb_context:setters(Context, [{fun cb_context:set_resp_data/2, RespJObj}
-                                ,{fun cb_context:set_resp_status/2, 'success'}
-                                ]).
-docs_list_to_json(DLs) ->
-    [ kz_json:from_list(
-        [{<<"name">>, Name}
-        ,{<<"order_id">>, OrderId}
-        ,{<<"order_num">>, OrderNum}
-        ,{<<"period">>, <<(kz_term:to_binary(YP))/binary,"-", (kz_date:pad_month(MP))/binary>>}
-        ,{<<"order_date">>, <<(kz_term:to_binary(Y))/binary,"-", (kz_date:pad_month(M))/binary,"-", (kz_date:pad_month(D))/binary>>}
-        ,{<<"price_netto">>, Netto}
-        ,{<<"vat">>, VAT}
-        ,{<<"price_brutto">>, Brutto}])
-      || [Name, OrderId, OrderNum, {YP,MP,_DP}, {Y,M,D}, Netto, VAT, Brutto] <- DLs ]. 
-
--spec validate_account_cdr(cb_context:context(), http_method()) -> cb_context:context().
-validate_account_cdr(Context, ?HTTP_POST) ->
-    AccountId = cb_context:account_id(Context),
-    ReqData = cb_context:req_data(Context),
-    Date =
-        case kz_json:get_value(<<"year">>, ReqData) == 'undefined'
-               orelse 
-             kz_json:get_value(<<"month">>, ReqData) == 'undefined'
-               orelse 
-             kz_json:get_value(<<"day">>, ReqData) == 'undefined'
-        of
-            true ->
-                {Y, M, D} = erlang:date();
-            false ->
-                {kz_json:get_integer_value(<<"year">>, ReqData)
-                ,kz_json:get_integer_value(<<"month">>, ReqData)
-                ,kz_json:get_integer_value(<<"day">>, ReqData)}
-        end,
-        Direction = kz_json:get_value(<<"direction">>, ReqData, <<"1">>),
-        CallsType = kz_json:get_value(<<"calls_type">>, ReqData, <<"1,2,3,4">>),
-        MaxCalls = kz_json:get_value(<<"max_calls">>, ReqData, <<"5000">>),
-    RespJObj = kz_json:from_list(
-      [{<<"cdrs">>, cdr_to_json(zzhd_mysql:get_calls_list_by_day(Date, Direction, CallsType, MaxCalls, AccountId))}
-      ]),
-    cb_context:setters(Context, [{fun cb_context:set_resp_data/2, RespJObj}
-                                ,{fun cb_context:set_resp_status/2, 'success'}
-                                ]).
- 
-cdr_to_json(CL) ->
-    [ kz_json:from_list(
-        [{<<"timefrom">>, kz_time:iso8601(localtime:local_to_local(Timefrom, "Europe/Moscow", "UTC"))}
-        ,{<<"numfrom">>, Numfrom}
-        ,{<<"numto">>, Numto}
-        ,{<<"duration">>, Duration}
-        ,{<<"direction">>, Direction}
-        ,{<<"amount">>, Amount}
-        ,{<<"key">>, Hash}])
-      || [Timefrom, Numfrom, Numto, Duration, Direction, Amount, Hash] <- CL ]. 
 
