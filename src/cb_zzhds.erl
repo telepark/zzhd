@@ -18,6 +18,7 @@
 -define(INFORMER_NAME_FILL, <<"informer_name_fill">>).
 -define(INFORMER_ACCOUNTS, <<"informer_accounts">>).
 -define(INFORMER_COMMENTS, <<"informer_comments">>).
+-define(INFORMER_TICKETS, <<"informer_tickets">>).
 
 -type payload() :: {cowboy_req:req(), cb_context:context()}.
 -export_type([payload/0]).
@@ -44,7 +45,9 @@ allowed_methods(?KZ_INFO) ->
 allowed_methods(?INFORMER_INFO) ->
     [?HTTP_GET, ?HTTP_PUT, ?HTTP_DELETE];
 allowed_methods(?INFORMER_COMMENTS) ->
-    [?HTTP_POST, ?HTTP_GET].
+    [?HTTP_POST, ?HTTP_GET];
+allowed_methods(?INFORMER_TICKETS) ->
+    [?HTTP_GET].
 
 -spec allowed_methods(path_token(), path_token()) -> http_methods().
 allowed_methods(?INFORMER_INFO, ?INFORMER_NAME_FILL) ->
@@ -119,7 +122,9 @@ validate(Context, ?KZ_INFO) ->
                                         ])
     end;
 validate(Context, ?INFORMER_COMMENTS) ->
-    validate_hd_comments(Context, cb_context:req_verb(Context)).
+    validate_hd_comments(Context, cb_context:req_verb(Context));
+validate(Context, ?INFORMER_TICKETS) ->
+    validate_hd_tickets(Context, cb_context:req_verb(Context)).
 
 -spec validate(cb_context:context(),path_token(),path_token()) -> cb_context:context().
 validate(Context, ?INFORMER_INFO, ?INFORMER_NAME_FILL) ->
@@ -161,6 +166,21 @@ validate_hd_comments(Context, CommentId, ?HTTP_PUT) ->
     Res = pgapp:equery(?ZZHD_PGSQL_POOL, "UPDATE public.comments SET comment_html=$1, comment_text=$2, modified=current_timestamp WHERE comment_id=$3", [CommentHTML, CommentTEXT, kz_term:to_integer(CommentId)]),
     lager:info("validate_hd_comments/2 Res: ~p",[Res]),
     cb_context:set_resp_status(Context, 'success').
+
+-spec validate_hd_tickets(cb_context:context(), http_method()) -> cb_context:context().
+validate_hd_tickets(Context, ?HTTP_GET) ->
+    lager:info("validate_hd_tickets validate/2  req_value informer_id: ~p",[cb_context:req_value(Context, <<"informer_id">>)]),
+    QS = cb_context:query_string(Context),
+    lager:info("validate_hd_tickets validate/2 query_string: ~p",[QS]),
+    case kz_json:get_value([<<"informer_id">>], QS) of
+        'undefined' ->
+            cb_context:setters(Context, [{fun cb_context:set_resp_status/2, 'error'}
+                                        ,{fun cb_context:set_resp_data/2, []}
+                                        ]);
+          %%  return_hd_comments_all(Context);
+        _ ->
+            return_hd_tickets_select(Context)
+    end.
 
 -spec validate_zzhd(cb_context:context(), http_method()) -> cb_context:context().
 validate_zzhd(Context, ?HTTP_PUT) ->
@@ -330,6 +350,14 @@ maybe_correct_datetime({{_, _, _}=Date, {H, M, S}}) ->
     kz_time:gregorian_seconds_to_unix_seconds(calendar:datetime_to_gregorian_seconds({Date,{H,M,kz_term:to_integer(S)}}));
 maybe_correct_datetime(Field) ->
     Field.
+
+return_hd_tickets_select(Context) ->
+    QS = cb_context:query_string(Context),
+    InformerId = kz_json:get_value([<<"informer_id">>], QS),
+    Tickets = zzhd_kayako:get_tickets_by_informer_id(InformerId),
+    cb_context:setters(Context, [{fun cb_context:set_resp_status/2, 'success'}
+                                ,{fun cb_context:set_resp_data/2, [kz_json:from_list(Ticket) || Ticket <- Tickets]}
+                                ]).
 
 validate_informer_info(Context, InformerId, ?HTTP_GET) ->
     lager:info("validate/2 INFORMER_INFO InformerId: ~p",[InformerId]),
