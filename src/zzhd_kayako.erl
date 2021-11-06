@@ -51,10 +51,7 @@ q_json(Query) ->
 -spec get_tickets_by_informer_id(kz_term:ne_binary()|integer()) -> any().
 get_tickets_by_informer_id(InformerId) ->
     Emails = zzhd:stakeholder_emails(InformerId),
-    Q = io_lib:format("select * from swtickets where email in (~s)"
+    Q = io_lib:format("select * from swtickets where email in (~s) order by lastactivity desc"
                      ,[kz_binary:join([<<"'", B/binary, "'">> || B <- Emails], ", " )]),
     emysql:as_json(q_raw(kz_term:to_binary(Q))).
 
-
-%% Q4 = io_lib:format("select * from swtickets where email in (~s)", [kz_binary:join([<<"'", B/binary, "'">> || B <- Args0], ", " )]).
-%% emysql:as_json(zzhd_kayako:q_raw(kz_term:to_binary(Q4))). 

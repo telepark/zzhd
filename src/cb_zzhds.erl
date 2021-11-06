@@ -12,12 +12,12 @@
 
 -define(ACCOUNT_INFO, <<"account_info">>).
 -define(CID_INFO, <<"cid_info">>).
--define(HD_INFO, <<"hd_info">>).
+-define(KZ_INFO, <<"kz_info">>).
 -define(INFORMER_INFO, <<"informer_info">>).
 -define(INFORMER_NAME, <<"informer_name">>).
 -define(INFORMER_NAME_FILL, <<"informer_name_fill">>).
--define(HD_ACCOUNTS, <<"hd_accounts">>).
--define(HD_COMMENTS, <<"hd_comments">>).
+-define(INFORMER_ACCOUNTS, <<"informer_accounts">>).
+-define(INFORMER_COMMENTS, <<"informer_comments">>).
 
 -type payload() :: {cowboy_req:req(), cb_context:context()}.
 -export_type([payload/0]).
@@ -37,19 +37,19 @@ allowed_methods(?ACCOUNT_INFO) ->
     [?HTTP_GET];
 allowed_methods(?CID_INFO) ->
     [?HTTP_GET];
-allowed_methods(?HD_ACCOUNTS) ->
+allowed_methods(?INFORMER_ACCOUNTS) ->
     [?HTTP_GET];
-allowed_methods(?HD_INFO) ->
+allowed_methods(?KZ_INFO) ->
     [?HTTP_GET];
 allowed_methods(?INFORMER_INFO) ->
     [?HTTP_GET, ?HTTP_PUT, ?HTTP_DELETE];
-allowed_methods(?HD_COMMENTS) ->
+allowed_methods(?INFORMER_COMMENTS) ->
     [?HTTP_POST, ?HTTP_GET].
 
 -spec allowed_methods(path_token(), path_token()) -> http_methods().
 allowed_methods(?INFORMER_INFO, ?INFORMER_NAME_FILL) ->
     [?HTTP_POST];
-allowed_methods(?HD_COMMENTS, _) ->
+allowed_methods(?INFORMER_COMMENTS, _) ->
     [?HTTP_PUT, ?HTTP_DELETE].
 
 -spec resource_exists() -> 'true'.
@@ -60,7 +60,7 @@ resource_exists(_) -> 'true'.
 
 -spec resource_exists(path_token(), path_token()) -> 'true'.
 resource_exists(?INFORMER_INFO,_) -> 'true';
-resource_exists(?HD_COMMENTS,_) -> 'true'.
+resource_exists(?INFORMER_COMMENTS,_) -> 'true'.
 
 -spec validate(cb_context:context()) -> cb_context:context().
 validate(Context) ->
@@ -76,7 +76,7 @@ validate(Context, ?ACCOUNT_INFO) ->
         _ ->
             validate_account_info(Context, cb_context:req_verb(Context))
     end;
-validate(Context, ?HD_ACCOUNTS) ->
+validate(Context, ?INFORMER_ACCOUNTS) ->
     Md5Hash = cb_context:req_value(Context, <<"md5">>),
     case zz_util:get_children_list(<<"d2047d303c22e5399c796a93848dcd9f">>) of
         {'ok', List} ->
@@ -108,23 +108,23 @@ validate(Context, ?INFORMER_INFO) ->
         InformerId ->
             validate_informer_info(Context, InformerId, cb_context:req_verb(Context))
     end;
-validate(Context, ?HD_INFO) ->
+validate(Context, ?KZ_INFO) ->
     case cb_context:req_value(Context, <<"consumer_accountId">>) of
         ?MATCH_ACCOUNT_RAW(AccountId) ->
-            lager:info("validate/2 HD_INFO Account Matched"),
+            lager:info("validate/2 KZ_INFO Account Matched"),
             return_all_info(Context, zzhd_pgsql:get_informer_by_kz_id(AccountId), AccountId);
         _ ->
             cb_context:setters(Context, [{fun cb_context:set_resp_status/2, 'success'}
                                         ,{fun cb_context:set_resp_data/2, kz_json:new()}
                                         ])
     end;
-validate(Context, ?HD_COMMENTS) ->
+validate(Context, ?INFORMER_COMMENTS) ->
     validate_hd_comments(Context, cb_context:req_verb(Context)).
 
 -spec validate(cb_context:context(),path_token(),path_token()) -> cb_context:context().
 validate(Context, ?INFORMER_INFO, ?INFORMER_NAME_FILL) ->
     validate_informer_name_fill(Context, cb_context:req_verb(Context));
-validate(Context, ?HD_COMMENTS, CommentId) ->
+validate(Context, ?INFORMER_COMMENTS, CommentId) ->
     validate_hd_comments(Context, CommentId, cb_context:req_verb(Context)).
 
 -spec validate_hd_comments(cb_context:context(), http_method()) -> cb_context:context().
