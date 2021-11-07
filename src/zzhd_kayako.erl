@@ -58,4 +58,4 @@ get_tickets_by_informer_id(InformerId) ->
 
 -spec get_messages_by_ticket_id(kz_term:ne_binary()|integer()) -> any().
 get_messages_by_ticket_id(TicketId) ->
-    emysql:as_json(q_raw(<<"SELECT * FROM swticketposts WHERE ticketid = ? ORDER BY dateline ASC">>, [TicketId])).
+    emysql:as_json(q_raw(<<"SELECT * FROM swticketposts WHERE ticketid = ? ORDER BY dateline DESC">>, [TicketId])).
