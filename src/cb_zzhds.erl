@@ -19,6 +19,7 @@
 -define(INFORMER_ACCOUNTS, <<"informer_accounts">>).
 -define(INFORMER_COMMENTS, <<"informer_comments">>).
 -define(INFORMER_TICKETS, <<"informer_tickets">>).
+-define(INFORMER_TICKET_MESSAGES, <<"informer_ticket_messages">>).
 
 -type payload() :: {cowboy_req:req(), cb_context:context()}.
 -export_type([payload/0]).
@@ -47,6 +48,8 @@ allowed_methods(?INFORMER_INFO) ->
 allowed_methods(?INFORMER_COMMENTS) ->
     [?HTTP_POST, ?HTTP_GET];
 allowed_methods(?INFORMER_TICKETS) ->
+    [?HTTP_GET];
+allowed_methods(?INFORMER_TICKET_MESSAGES) ->
     [?HTTP_GET].
 
 -spec allowed_methods(path_token(), path_token()) -> http_methods().
@@ -124,7 +127,9 @@ validate(Context, ?KZ_INFO) ->
 validate(Context, ?INFORMER_COMMENTS) ->
     validate_hd_comments(Context, cb_context:req_verb(Context));
 validate(Context, ?INFORMER_TICKETS) ->
-    validate_hd_tickets(Context, cb_context:req_verb(Context)).
+    validate_hd_tickets(Context, cb_context:req_verb(Context));
+validate(Context, ?INFORMER_TICKET_MESSAGES) ->
+    validate_hd_ticket_messages(Context, cb_context:req_verb(Context)).
 
 -spec validate(cb_context:context(),path_token(),path_token()) -> cb_context:context().
 validate(Context, ?INFORMER_INFO, ?INFORMER_NAME_FILL) ->
@@ -177,9 +182,21 @@ validate_hd_tickets(Context, ?HTTP_GET) ->
             cb_context:setters(Context, [{fun cb_context:set_resp_status/2, 'error'}
                                         ,{fun cb_context:set_resp_data/2, []}
                                         ]);
-          %%  return_hd_comments_all(Context);
         _ ->
             return_hd_tickets_select(Context)
+    end.
+
+-spec validate_hd_ticket_messages(cb_context:context(), http_method()) -> cb_context:context().
+validate_hd_ticket_messages(Context, ?HTTP_GET) ->
+    QS = cb_context:query_string(Context),
+    lager:info("validate_hd_ticket_messages validate/2 query_string: ~p",[QS]),
+    case kz_json:get_value([<<"ticket_id">>], QS) of
+        'undefined' ->
+            cb_context:setters(Context, [{fun cb_context:set_resp_status/2, 'error'}
+                                        ,{fun cb_context:set_resp_data/2, []}
+                                        ]);
+        _ ->
+            return_hd_ticket_messages_select(Context)
     end.
 
 -spec validate_zzhd(cb_context:context(), http_method()) -> cb_context:context().
@@ -357,6 +374,14 @@ return_hd_tickets_select(Context) ->
     Tickets = zzhd_kayako:get_tickets_by_informer_id(InformerId),
     cb_context:setters(Context, [{fun cb_context:set_resp_status/2, 'success'}
                                 ,{fun cb_context:set_resp_data/2, [kz_json:from_list(Ticket) || Ticket <- Tickets]}
+                                ]).
+
+return_hd_ticket_messages_select(Context) ->
+    QS = cb_context:query_string(Context),
+    TicketId = kz_json:get_value([<<"ticket_id">>], QS),
+    Messages = zzhd_kayako:get_messages_by_ticket_id(TicketId),
+    cb_context:setters(Context, [{fun cb_context:set_resp_status/2, 'success'}
+                                ,{fun cb_context:set_resp_data/2, [kz_json:from_list(Message) || Message <- Messages]}
                                 ]).
 
 validate_informer_info(Context, InformerId, ?HTTP_GET) ->

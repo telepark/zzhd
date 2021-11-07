@@ -8,6 +8,7 @@
         ,q/2
         ,q_json/1
         ,get_tickets_by_informer_id/1
+        ,get_messages_by_ticket_id/1
         ]).
 
 -include_lib("zzhd.hrl").
@@ -55,3 +56,6 @@ get_tickets_by_informer_id(InformerId) ->
                      ,[kz_binary:join([<<"'", B/binary, "'">> || B <- Emails], ", " )]),
     emysql:as_json(q_raw(kz_term:to_binary(Q))).
 
+-spec get_messages_by_ticket_id(kz_term:ne_binary()|integer()) -> any().
+get_messages_by_ticket_id(TicketId) ->
+    emysql:as_json(q_raw(<<"SELECT * FROM swticketposts WHERE ticketid = ? ORDER BY dateline ASC">>, [TicketId])).
