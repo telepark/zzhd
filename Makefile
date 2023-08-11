@@ -20,7 +20,7 @@ check_epgsql_deps:
 	   echo "epgsql exists"; \
 	else \
 	  echo "" >> $(ROOT)/make/deps.mk; \
-	  echo "DEPS += epgsql dep_pgapp" >> $(ROOT)/make/deps.mk; \
+	  echo "DEPS += epgsql pgapp" >> $(ROOT)/make/deps.mk; \
 	  echo "dep_epgsql = git https://github.com/epgsql/epgsql" >> $(ROOT)/make/deps.mk; \
 	  echo "dep_pgapp = git https://github.com/epgsql/pgapp" >> $(ROOT)/make/deps.mk; \
 	  echo "" >> $(ROOT)/make/deps.mk; \
